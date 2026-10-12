@@ -1,634 +1,109 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "workflow-kernel",
   "name": "sy-comet",
   "goal": "轻量研发：grill-me 澄清 → PRD/增量 Spec → UI → 技术设计 → 轻量任务 → 可恢复执行 → 测试报告 → 验收与 Spec 归档；可分发安装包自动补齐依赖。",
+  "comment": "本文件只保留 scripts/yt.mjs 运行时真实消费的字段；节点顺序即推进顺序，门禁/校验逻辑硬编码于 yt.mjs（确认节点 clarify/ui/design/archive，验证-修复上限 3 次）。编辑本文件会改变 protocolHash，进行中变更需运行 yt.mjs migrate。",
+  "config": {
+    "specTargetPrefix": "openspec/specs/",
+    "specSyncRequired": true
+  },
   "nodes": [
     {
       "id": "clarify",
-      "label": "需求澄清",
-      "kind": "producer",
-      "responsibility": "通过车轮式追问与用户澄清需求，直到决策树 frontier 清空、无隐含假设。",
-      "requiredSkillCalls": [
-        {
-          "skill": "grill-me",
-          "operation": "require",
-          "scope": "main",
-          "enforcement": "evidence-only",
-          "reason": "澄清环节必须调用 grill-me（内部委托 grilling 完成追问式访谈）。"
-        }
-      ],
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.clarify.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "clarify-log-exists",
-          "label": "澄清纪要存在才允许进入 specify",
-          "validation": "artifact-exists"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-clarify",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
+      "label": "需求澄清：车轮式追问直到无隐含假设，产物为澄清纪要",
+      "outputSchemas": ["yt.clarify.v1"]
     },
     {
       "id": "specify",
       "label": "整理 PRD 与 ADR",
-      "kind": "producer",
-      "responsibility": "把澄清结果整理为 PRD（目标/范围/用户故事/验收标准）和 ADR（每条决策的上下文/选项/结论/理由）。",
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.specify.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "prd-adr-exist",
-          "label": "prd.md 与 adr.md 都存在才允许进入 design",
-          "validation": "artifact-exists"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-specify",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
+      "outputSchemas": ["yt.specify.v1"]
     },
     {
       "id": "ui",
-      "label": "UI 设计",
-      "kind": "producer",
+      "label": "UI 设计；无界面需求时 skip",
       "skippable": true,
-      "responsibility": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无界面需求时用 skip 记录原因跳过本节点。",
-      "operations": [
-        "require",
-        "augment",
-        "skip"
-      ],
-      "outputSchemas": [
-        "yt.ui.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "ui-required",
-          "label": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无界面需求时用 skip 记录原因跳过本节点。",
-          "validation": "artifact-exists"
-        }
-      ],
-      "augmentations": [
-        {
-          "skill": "frontend-design",
-          "operation": "augment",
-          "scope": "main",
-          "enforcement": "advisory",
-          "reason": "按需 UI 原型实现"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-ui",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "satisfies": [],
-      "disabled": false
+      "outputSchemas": ["yt.ui.v1"]
     },
     {
       "id": "design",
-      "label": "详细设计",
-      "kind": "producer",
-      "responsibility": "基于 PRD 产出详细设计（架构/数据流/错误处理/测试策略）。",
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.design.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "design-exists",
-          "label": "design.md 存在才允许进入 plan",
-          "validation": "artifact-exists"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-design",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
+      "label": "详细设计；小型变更（无架构调整/数据迁移/新接口）可 skip",
+      "skippable": true,
+      "outputSchemas": ["yt.design.v1"]
     },
     {
       "id": "plan",
       "label": "可续跑执行计划",
-      "kind": "producer",
-      "responsibility": "按可验收能力拆分任务，只记录 ID、目标、依赖、模块、验收条件和状态，不提前写完整实现代码，不调用 writing-plans。",
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.plan.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "plan-valid",
-          "label": "plan.md 存在且每个任务含合法 status 枚举",
-          "validation": "artifact-structured"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-plan",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
+      "outputSchemas": ["yt.plan.v1"]
     },
     {
       "id": "execute",
       "label": "逐任务执行",
-      "kind": "control",
-      "responsibility": "依赖就绪任务逐个执行，相关验证通过才 done；状态和证据持久化，不要求每任务提交。",
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.execute.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "all-tasks-done",
-          "label": "所有任务 done 才允许进入 verify",
-          "validation": "artifact-structured"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-execute",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
+      "outputSchemas": ["yt.execute.v1"]
     },
     {
       "id": "verify",
       "label": "测试并输出报告",
-      "kind": "control",
-      "responsibility": "按影响范围运行测试并形成必需报告；输入未变复用证据，不调用 verification-before-completion；失败或未测的必测项阻止验收。",
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.verify.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "report-required",
-          "label": "测试报告必需",
-          "validation": "artifact-exists"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-verify",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
+      "outputSchemas": ["yt.verify.v1"]
     },
     {
       "id": "archive",
       "label": "验收与 Spec 归档",
-      "kind": "control",
-      "responsibility": "验收通过后同步正式 Spec，校验一致再归档；失败和必测未测项阻断。",
-      "operations": [
-        "require"
-      ],
-      "outputSchemas": [
-        "yt.archive.v1"
-      ],
-      "guardrails": [
-        {
-          "id": "archive-required",
-          "label": "验收通过后同步正式 Spec，校验一致再归档；失败和必测未测项阻断。",
-          "validation": "artifact-exists"
-        }
-      ],
-      "implementation": {
-        "skill": "sy-comet-archive",
-        "operation": "default",
-        "scope": "main",
-        "enforcement": "guarded"
-      },
-      "requiredSkillCalls": [],
-      "augmentations": [],
-      "satisfies": [],
-      "disabled": false
-    }
-  ],
-  "edges": [
-    {
-      "from": "clarify",
-      "to": "specify",
-      "condition": "success"
-    },
-    {
-      "from": "clarify",
-      "to": "clarify",
-      "condition": "failure"
-    },
-    {
-      "from": "clarify",
-      "to": "clarify",
-      "condition": "pause"
-    },
-    {
-      "from": "specify",
-      "to": "ui",
-      "condition": "success"
-    },
-    {
-      "from": "specify",
-      "to": "specify",
-      "condition": "failure"
-    },
-    {
-      "from": "specify",
-      "to": "specify",
-      "condition": "pause"
-    },
-    {
-      "from": "ui",
-      "to": "design",
-      "condition": "success"
-    },
-    {
-      "from": "ui",
-      "to": "ui",
-      "condition": "failure"
-    },
-    {
-      "from": "ui",
-      "to": "ui",
-      "condition": "pause"
-    },
-    {
-      "from": "design",
-      "to": "plan",
-      "condition": "success"
-    },
-    {
-      "from": "design",
-      "to": "design",
-      "condition": "failure"
-    },
-    {
-      "from": "design",
-      "to": "design",
-      "condition": "pause"
-    },
-    {
-      "from": "plan",
-      "to": "execute",
-      "condition": "success"
-    },
-    {
-      "from": "plan",
-      "to": "plan",
-      "condition": "failure"
-    },
-    {
-      "from": "plan",
-      "to": "plan",
-      "condition": "pause"
-    },
-    {
-      "from": "execute",
-      "to": "verify",
-      "condition": "success"
-    },
-    {
-      "from": "execute",
-      "to": "execute",
-      "condition": "failure"
-    },
-    {
-      "from": "execute",
-      "to": "execute",
-      "condition": "pause"
-    },
-    {
-      "from": "verify",
-      "to": "archive",
-      "condition": "success"
-    },
-    {
-      "from": "verify",
-      "to": "verify",
-      "condition": "failure"
-    },
-    {
-      "from": "verify",
-      "to": "verify",
-      "condition": "pause"
-    },
-    {
-      "from": "archive",
-      "to": null,
-      "condition": "success"
-    },
-    {
-      "from": "archive",
-      "to": "archive",
-      "condition": "failure"
-    },
-    {
-      "from": "archive",
-      "to": "archive",
-      "condition": "pause"
+      "outputSchemas": ["yt.archive.v1"]
     }
   ],
   "outputSchemas": [
     {
       "id": "yt.clarify.v1",
-      "description": "需求澄清纪要（决策树与逐轮问答）",
       "artifacts": [
-        {
-          "id": "clarify-log",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/clarify-log.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "clarify-summary",
-          "required": true
-        }
+        { "required": true, "paths": ["docs/sy-comet/current/clarify-log.md"] }
       ]
     },
     {
       "id": "yt.specify.v1",
-      "description": "PRD（目标/范围/用户故事/验收标准）与 ADR（上下文/选项/结论/理由）",
       "artifacts": [
-        {
-          "id": "prd",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/prd.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        },
-        {
-          "id": "adr",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/adr.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        },
-        {
-          "id": "spec-delta",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/spec-delta.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "spec-summary",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "yt.design.v1",
-      "description": "基于 PRD 的详细设计（架构/数据流/错误处理/测试策略）",
-      "artifacts": [
-        {
-          "id": "design-doc",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/design.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "design-summary",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "yt.plan.v1",
-      "description": "轻量任务与验证记录，无强制 commit 字段",
-      "artifacts": [
-        {
-          "id": "plan-doc",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/plan.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-structured"
-          ]
-        },
-        {
-          "id": "tasks",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/tasks.json"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "plan-summary",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "yt.execute.v1",
-      "description": "轻量任务与验证记录，无强制 commit 字段",
-      "artifacts": [
-        {
-          "id": "plan-doc",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/plan.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-structured"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "execution-complete",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "yt.verify.v1",
-      "description": "必需测试报告与可追溯结果，验收前检查必测项",
-      "artifacts": [
-        {
-          "id": "test-report",
-          "kind": "report",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/test-report.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        },
-        {
-          "id": "test-results",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/test-results.json"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "test-report-summary",
-          "required": true
-        }
+        { "required": true, "paths": ["docs/sy-comet/current/prd.md"] },
+        { "required": true, "paths": ["docs/sy-comet/current/adr.md"] },
+        { "required": true, "paths": ["docs/sy-comet/current/spec-delta.md"] }
       ]
     },
     {
       "id": "yt.ui.v1",
-      "description": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无界面需求时本节点被 skip 跳过，不产生 ui.md。",
       "artifacts": [
-        {
-          "id": "ui-doc",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/ui.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "ui-summary",
-          "required": true
-        }
+        { "required": true, "paths": ["docs/sy-comet/current/ui.md"] }
+      ]
+    },
+    {
+      "id": "yt.design.v1",
+      "artifacts": [
+        { "required": true, "paths": ["docs/sy-comet/current/design.md"] }
+      ]
+    },
+    {
+      "id": "yt.plan.v1",
+      "artifacts": [
+        { "required": true, "paths": ["docs/sy-comet/current/plan.md"] },
+        { "required": true, "paths": ["docs/sy-comet/current/tasks.json"] }
+      ]
+    },
+    {
+      "id": "yt.execute.v1",
+      "artifacts": [
+        { "required": true, "paths": ["docs/sy-comet/current/plan.md"] }
+      ]
+    },
+    {
+      "id": "yt.verify.v1",
+      "artifacts": [
+        { "required": true, "paths": ["docs/sy-comet/current/test-report.md"] },
+        { "required": true, "paths": ["docs/sy-comet/current/test-results.json"] }
       ]
     },
     {
       "id": "yt.archive.v1",
-      "description": "验收通过后同步正式 Spec，校验一致再归档；失败和必测未测项阻断。",
       "artifacts": [
-        {
-          "id": "archive-doc",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/archive-report.md"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        },
-        {
-          "id": "spec-sync",
-          "kind": "file",
-          "required": true,
-          "paths": [
-            "docs/sy-comet/current/spec-sync.json"
-          ],
-          "pathBase": "project",
-          "validations": [
-            "artifact-exists"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "archive-summary",
-          "required": true
-        }
+        { "required": true, "paths": ["docs/sy-comet/current/archive-report.md"] },
+        { "required": true, "paths": ["docs/sy-comet/current/spec-sync.json"] }
       ]
     }
   ],

@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const MANIFEST = '.sy-comet-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
@@ -54,6 +54,13 @@ function* walk(dir) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) yield* walk(p);
     else if (e.isFile()) yield p;
+    else if (e.isSymbolicLink()) {
+      try {
+        const st = fs.statSync(p);
+        if (st.isDirectory()) yield* walk(p);
+        else if (st.isFile()) yield p;
+      } catch { /* 悬空符号链接跳过 */ }
+    }
   }
 }
 
@@ -77,6 +84,17 @@ if (update) {
     process.exit(1);
   }
   oldManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const vcmp = (a, b) => {
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d;
+    }
+    return 0;
+  };
+  if (oldManifest.version && vcmp(oldManifest.version, VERSION) > 0) {
+    console.error(`警告：已安装版本 ${oldManifest.version} 高于本包 ${VERSION}，继续将降级覆盖。`);
+  }
 }
 
 const newManifest = { version: VERSION, installedAt: new Date().toISOString(), files: {} };
@@ -95,12 +113,10 @@ for (const [rel, src] of pkgFiles) {
         // 旧版本，安全覆盖
       } else if (!force) {
         conflicts.push(rel);
-        newManifest.files[rel] = destHash; // 保留本地修改，清单记录现状
-        continue;
+        continue; // 本地修改不记入清单：后续 --update 仍将其识别为冲突，不会被误当旧版本覆盖
       }
     } else if (!force) {
       conflicts.push(rel);
-      newManifest.files[rel] = destHash;
       continue;
     }
   }
@@ -123,13 +139,14 @@ if (update && oldManifest) {
       if (apply) fs.rmSync(dest);
       pruned++;
     } else {
-      kept.push(rel);
-      newManifest.files[rel] = sha(fs.readFileSync(dest));
+      kept.push(rel); // 本地修改过的已删除文件保留，且不记入清单，避免下次更新被误清理
     }
   }
 }
 
-if (apply && !conflicts.length) {
+// 清单始终落盘，记录本包实际安装的文件基线，保证后续 --update 有据可依；
+// 冲突与保留的本地修改不入清单（见上），不会被后续更新误覆盖或误清理。
+if (apply) {
   fs.mkdirSync(targetRoot, { recursive: true });
   fs.writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2) + '\n');
 }

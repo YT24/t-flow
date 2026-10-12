@@ -5,7 +5,7 @@
       "id": "AC-01",
       "required": true,
       "status": "not_run",
-      "evidence": "docs/sy-comet/current/evidence.json"
+      "evidence": "docs/sy-comet/current/evidence/AC-01.json"
     }
   ]
 }

@@ -9,7 +9,7 @@ description: 仅由 sy-comet 入口路由到本阶段时使用。
 运行 yt.mjs status 确认当前节点为 design，读取已完成产物及目标项目约束。
 
 ### Steps
-编写 design.md，明确接口、数据流、权限、数据迁移和测试策略。读取目标项目 AGENTS.md；本项目遵守 gateway 入口、backend 辖区校验、LLM 只 prepare、独立确认及 Liquibase。向用户一起展示 UI 和技术设计，确认后记录 approve design。
+编写 design.md，明确接口、数据流、权限、数据迁移和测试策略。读取目标项目 AGENTS.md 并遵守其中约束。向用户展示技术设计（UI 原型已在 ui 门禁单独确认；若 ui 被 skip，说明无界面影响即可），确认后记录 approve design。小型变更（无架构调整、无数据迁移、无新接口）可不写 design.md：向用户说明理由，运行 yt.mjs skip design <原因> 记录后本节点直接完成。
 
 ### Completion reasoning
 逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
