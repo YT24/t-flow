@@ -74,10 +74,12 @@
       "id": "ui",
       "label": "UI 设计",
       "kind": "producer",
-      "responsibility": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无 UI 记录原因。",
+      "skippable": true,
+      "responsibility": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无界面需求时用 skip 记录原因跳过本节点。",
       "operations": [
         "require",
-        "augment"
+        "augment",
+        "skip"
       ],
       "outputSchemas": [
         "yt.ui.v1"
@@ -85,7 +87,7 @@
       "guardrails": [
         {
           "id": "ui-required",
-          "label": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无 UI 记录原因。",
+          "label": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无界面需求时用 skip 记录原因跳过本节点。",
           "validation": "artifact-exists"
         }
       ],
@@ -571,7 +573,7 @@
     },
     {
       "id": "yt.ui.v1",
-      "description": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无 UI 记录原因。",
+      "description": "复用 PRD 的角色权限和状态，调用 frontend-design 生成原型及检查；无界面需求时本节点被 skip 跳过，不产生 ui.md。",
       "artifacts": [
         {
           "id": "ui-doc",

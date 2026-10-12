@@ -60,6 +60,8 @@ function doctor(){
    if(s.workflow!==protocol.name)problems.push('state.workflow ('+s.workflow+') 与协议 ('+protocol.name+') 不一致');
    if(s.protocolHash!==sha(JSON.stringify(protocol)))problems.push('protocolHash 不匹配：协议已变更，需迁移 state');
    if(s.currentNode&&!nodes.some(n=>n.id===s.currentNode))problems.push('currentNode 非法: '+s.currentNode);
+   for(const id of Object.keys(s.skipped||{})){const sn=nodes.find(n=>n.id===id);if(!sn)problems.push('跳过记录指向未知节点 '+id);else if(!sn.skippable)problems.push('不可跳过的节点存在跳过记录: '+id);}
+   if(s.currentNode&&s.skipped?.[s.currentNode])problems.push('当前节点存在跳过记录: '+s.currentNode);
    if(s.currentNode&&!fs.existsSync(safe(current)))problems.push('currentNode 非空但 '+current+' 目录缺失');
    if(!s.currentNode&&fs.existsSync(safe(current)))problems.push('已归档但 '+current+' 残留（上次归档清理中断），核实后手动删除');
    const docBase=s.currentNode?current:s.archivePath;
@@ -70,13 +72,13 @@ function doctor(){
  if(problems.length){console.log('PROBLEMS:');for(const p of problems)console.log('- '+p);process.exitCode=1;}else console.log('OK');
 }
 try{
- if(cmd==='help'){console.log('yt.mjs init <change-id> | status | approve <node> <用户确认原文> | check | advance | task <id> <status> [evidence] | run <id> [--input <path>]... -- <命令> | handoff | doctor | reopen <node> | archive\n确认节点: '+APPROVAL_NODES.join('/')+'（产物变化后确认自动失效）。验证-修复循环超过 '+MAX_VERIFY_FAILURES+' 次将停止并要求用户决策。证据必须由 run 真实执行生成，禁止手写。\n项目根: COMET_RUN_ROOT 或 cwd。归档前必须 Spec 合并与人工验收；不会自动提交或发布代码。');}
+ if(cmd==='help'){console.log('yt.mjs init <change-id> | status | approve <node> <用户确认原文> | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <path>]... -- <命令> | handoff | doctor | reopen <node> | archive\n确认节点: '+APPROVAL_NODES.join('/')+'（产物变化后确认自动失效）。可跳过节点（协议声明）: '+(nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无')+'；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。验证-修复循环超过 '+MAX_VERIFY_FAILURES+' 次将停止并要求用户决策。证据必须由 run 真实执行生成，禁止手写。\n项目根: COMET_RUN_ROOT 或 cwd。归档前必须 Spec 合并与人工验收；不会自动提交或发布代码。');}
  else if(cmd==='doctor'){doctor();}
  else if(cmd==='init'){
   if(!/^[a-z0-9][a-z0-9-]{0,79}$/.test(arg||''))throw Error('change-id 使用小写字母数字和连字符');
   if(fs.existsSync(stateFile)){const old=state();if(old.currentNode)throw Error('已有进行中变更 '+old.changeId);}
   if(fs.existsSync(safe(current)))throw Error('current 已存在，先检查已有文档，不自动覆盖');
-  const s={schemaVersion:1,workflow:protocol.name,protocolHash:sha(JSON.stringify(protocol)),changeId:arg,currentNode:nodes[0].id,completedNodes:[],completedHashes:{},approvals:{},verifyFailures:0,history:[]};
+  const s={schemaVersion:1,workflow:protocol.name,protocolHash:sha(JSON.stringify(protocol)),changeId:arg,currentNode:nodes[0].id,completedNodes:[],completedHashes:{},approvals:{},skipped:{},verifyFailures:0,history:[]};
   fs.mkdirSync(safe(current),{recursive:true});save(s,'init');print(s);
  }else{
   const s=state();
@@ -91,12 +93,18 @@ try{
    const i=nodes.findIndex(n=>n.id===arg);if(i<0||!s.currentNode)throw Error('无法重新打开');
    const currentIndex=nodes.findIndex(n=>n.id===s.currentNode);if(i>currentIndex)throw Error('不能跳过阶段');
    if(s.currentNode==='verify'&&i<currentIndex){s.verifyFailures=(s.verifyFailures||0)+1;if(s.verifyFailures>MAX_VERIFY_FAILURES){save(s,'verify-loop-blocked');throw Error('验证-修复循环已达 '+MAX_VERIFY_FAILURES+' 次：停止自动重试，向用户展示失败历史并等待方向选择（继续修复/调整需求/停止）');}}
-   s.currentNode=arg;s.completedNodes=s.completedNodes.filter(id=>nodes.findIndex(n=>n.id===id)<i);for(const n of nodes.slice(i)){delete s.approvals[n.id];delete s.completedHashes[n.id];}save(s,'reopen '+arg);print(s);
+   s.currentNode=arg;s.completedNodes=s.completedNodes.filter(id=>nodes.findIndex(n=>n.id===id)<i);for(const n of nodes.slice(i)){delete s.approvals[n.id];delete s.completedHashes[n.id];if(s.skipped)delete s.skipped[n.id];}save(s,'reopen '+arg);print(s);
   }else{
    drift(s);if(!s.currentNode)throw Error('变更已归档');
    if(cmd==='approve'){
     if(arg!==s.currentNode||!APPROVAL_NODES.includes(arg)||!value?.trim())throw Error('只可为当前确认节点记录用户确认原文');
     validate(s,arg,{approval:false});s.approvals[arg]={quote:value,fingerprint:fingerprint(s,arg),at:new Date().toISOString()};save(s,'approve '+arg);print(s);
+   }else if(cmd==='skip'){
+    const n=node(arg);if(!n.skippable)throw Error('节点不可跳过 '+arg+'（可跳过: '+(nodes.filter(x=>x.skippable).map(x=>x.id).join('/')||'无')+'）');
+    if(arg!==s.currentNode)throw Error('只能跳过当前节点 '+s.currentNode);
+    if(!value?.trim())throw Error('skip 必须记录原因');
+    (s.skipped=s.skipped||{})[arg]={reason:value.trim(),at:new Date().toISOString()};delete s.approvals[arg];
+    s.currentNode=nodes[nodes.findIndex(x=>x.id===arg)+1]?.id??null;save(s,'skip '+arg);print(s);
    }else if(cmd==='run'){
     if(!/^[a-z0-9][a-z0-9-]{0,79}$/.test(arg||''))throw Error('evidence-id 使用小写字母数字和连字符');
     const rest=process.argv.slice(4),sep=rest.indexOf('--');
