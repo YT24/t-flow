@@ -1,0 +1,18 @@
+---
+name: sy-comet-plan
+description: 仅由 sy-comet 入口路由到本阶段时使用。
+---
+
+# sy-comet-plan
+
+### Prerequisites
+运行 yt.mjs status 确认当前节点为 plan，读取已完成产物及目标项目约束。
+
+### Steps
+编写简短 plan.md 和 tasks.json。每项 id/title/dependsOn/modules/acceptance/status；status 初始 pending。按可验收能力拆，不写完整实现代码或测试代码，不调用 writing-plans。检查需求覆盖、循环依赖和接口先后关系。任务状态只保存在 tasks.json，不在 plan.md 维护第二份。
+
+### Completion reasoning
+逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
+
+### Red flags
+空文件、未经执行的测试、伪造用户确认、沿用过期证据均不能算完成。中断后从 status 和磁盘恢复，不重新初始化覆盖。

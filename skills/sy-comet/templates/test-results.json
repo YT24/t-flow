@@ -1,0 +1,11 @@
+{
+  "changeId": "example-change",
+  "tests": [
+    {
+      "id": "AC-01",
+      "required": true,
+      "status": "not_run",
+      "evidence": "docs/sy-comet/current/evidence.json"
+    }
+  ]
+}

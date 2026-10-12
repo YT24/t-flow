@@ -1,0 +1,11 @@
+{
+  "_说明": "evidence 由 yt.mjs run <id> [--input <路径>]... -- <命令> 真实执行后自动生成到 docs/sy-comet/current/evidence/<id>.json，禁止手写本文件。",
+  "changeId": "example-change",
+  "status": "passed",
+  "command": "实际执行的命令",
+  "recordedAt": "实际执行时间",
+  "inputs": {
+    "相关源文件": "SHA256"
+  },
+  "log": "docs/sy-comet/current/logs/example.log"
+}

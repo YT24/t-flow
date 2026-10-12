@@ -1,0 +1,14 @@
+[
+  {
+    "id": "T-01",
+    "title": "实现一个可验收能力",
+    "dependsOn": [],
+    "modules": [
+      "按需填写"
+    ],
+    "acceptance": [
+      "可验证条件"
+    ],
+    "status": "pending"
+  }
+]

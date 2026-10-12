@@ -1,0 +1,18 @@
+---
+name: sy-comet-clarify
+description: 仅由 sy-comet 入口路由到本阶段时使用。
+---
+
+# sy-comet-clarify
+
+### Prerequisites
+运行 yt.mjs status 确认当前节点为 clarify，读取已完成产物及目标项目约束。
+
+### Steps
+读取并调用 grill-me，它委托 grilling。按决策依赖逐轮澄清，记录问答、范围、不做事项、角色、验收边界和未决问题到 clarify-log.md。记录实际调用证据。无未决关键问题后展示摘要，请用户确认并记录 approve clarify。子代理若承担澄清，同样加载这两个 Skill 并回传证据。
+
+### Completion reasoning
+逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
+
+### Red flags
+空文件、未经执行的测试、伪造用户确认、沿用过期证据均不能算完成。中断后从 status 和磁盘恢复，不重新初始化覆盖。
