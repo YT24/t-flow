@@ -26,9 +26,14 @@ node install.mjs --project /path/to/your-project --apply
 # 安装到全局（所有项目可用）
 node install.mjs --global --apply
 
+# 更新已安装的 sy-comet（按安装清单区分旧版本与你的本地修改）
+node install.mjs --project /path/to/your-project --update --apply
+
 # 覆盖本地已修改的同名 Skill
-node install.mjs --project /path/to/your-project --apply --force
+node install.mjs --project /path/to/your-project --update --apply --force
 ```
+
+**更新语义**：安装后目标目录会有 `.sy-comet-manifest.json` 清单（版本 + 每个文件的 hash）。`--update` 时：与清单一致的文件视为旧版本安全覆盖；与清单不一致的视为你的本地修改，跳过并列为冲突（`--force` 才覆盖）；新包已删除的文件，未动过则清除、动过则保留并提示。
 
 ## 使用
 
