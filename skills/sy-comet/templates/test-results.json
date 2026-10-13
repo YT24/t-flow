@@ -1,11 +1,12 @@
 {
+  "_说明": "每个 prd.md 里的需求编号（默认 REQ-NN）都必须有对应用例：用例 id 须包含该编号（如 REQ-01-登录成功）。脚本强制校验覆盖，缺项会阻断 verify。",
   "changeId": "example-change",
   "tests": [
     {
-      "id": "AC-01",
+      "id": "REQ-01",
       "required": true,
       "status": "not_run",
-      "evidence": "docs/sy-comet/current/evidence/AC-01.json"
+      "evidence": "docs/sy-comet/current/evidence/REQ-01.json"
     }
   ]
 }

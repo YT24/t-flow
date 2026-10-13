@@ -11,6 +11,10 @@ const nodes=protocol.nodes.filter(n=>!n.disabled);
 const cfg=protocol.config||{};
 const SPEC_PREFIX=cfg.specTargetPrefix??'openspec/specs/';
 const SPEC_REQUIRED=cfg.specSyncRequired!==false;
+// 需求编号模式与覆盖校验：PRD 里的需求编号必须被 test-results.json 的用例 id 覆盖，
+// 否则"必测项"完全由被测方自定义，需求与测试之间没有可追溯性（历史缺陷）。
+const REQ_PATTERN=cfg.requirementIdPattern??'REQ-\\d+';
+const REQ_COVERAGE=cfg.requireCoverage!==false;
 const [cmd='help',arg,value,...extra]=process.argv.slice(2);
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 // 确认门禁与验证-修复上限均由协议声明（改动这些值会改变 protocolHash，进行中变更需 migrate）。
@@ -39,7 +43,18 @@ function tasks(){const t=json(current+'/tasks.json');if(!Array.isArray(t)||!t.le
  if(!Array.isArray(x.modules)||!x.modules.length||x.modules.some(m=>typeof m!=='string'||!m.trim()))throw Error('任务 '+x.id+' 的 modules 必须是非空路径数组（证据输入绑定依赖它）');
  if(x.dependsOn.some(d=>!ids.has(d)||d===x.id))throw Error('任务依赖非法 '+x.id);}const seen=new Set(),active=new Set();function visit(id){if(active.has(id))throw Error('任务依赖循环');if(seen.has(id))return;active.add(id);t.find(x=>x.id===id).dependsOn.forEach(visit);active.delete(id);seen.add(id);}t.forEach(x=>visit(x.id));return t;}
 function validateEvidence(e,s){if(e.changeId!==s.changeId||e.status!=='passed'||!e.command||!e.recordedAt||!e.inputs||!Object.keys(e.inputs).length)throw Error('验证证据字段缺失或未通过');for(const [p,h]of Object.entries(e.inputs)){if(sha(read(p))!==h)throw Error('验证证据过期: '+p);}if(!e.log||!read(e.log).trim())throw Error('缺少验证日志');}
-function testResult(s){const r=json(current+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed')validateEvidence(json(t.evidence),s);}if(!r.tests.some(t=>t.required))throw Error('没有定义必测项');return r;}
+function testResult(s){const r=json(current+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed')validateEvidence(json(t.evidence),s);}if(!r.tests.some(t=>t.required))throw Error('没有定义必测项');coverage(r);return r;}
+// 需求覆盖：prd.md 中符合 requirementIdPattern 的编号，必须能在用例 id 里找到对应项。
+function coverage(r){
+ if(!REQ_COVERAGE)return;
+ let re;try{re=new RegExp(REQ_PATTERN,'g');}catch(e){throw Error('requirementIdPattern 不是合法正则: '+REQ_PATTERN);}
+ const prd=read(current+'/prd.md'),reqs=new Set(prd.match(re)||[]);
+ if(!reqs.size)throw Error('PRD 未包含任何需求编号（模式 '+REQ_PATTERN+'）：无法建立需求与测试的对应关系；若本项目不使用编号，请在 protocol config 置 requireCoverage:false');
+ const ids=r.tests.map(t=>String(t.id));
+ // 按编号边界匹配：REQ-011 不应被当作覆盖 REQ-01（后缀须结束或接非数字分隔符）。
+ const uncovered=[...reqs].filter(q=>!ids.some(id=>new RegExp('(^|[^0-9A-Za-z])'+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'($|[^0-9])').test(id)));
+ if(uncovered.length)throw Error('以下需求缺少对应用例: '+uncovered.join(', ')+'（用例 id 须包含需求编号，如 '+[...reqs][0]+' 或 '+[...reqs][0]+'-场景）');
+}
 function syncResult(s){const p=current+'/spec-sync.json';if(!fs.existsSync(safe(p))){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}const r=json(p);if(r.changeId!==s.changeId||!Array.isArray(r.files))throw Error('Spec 同步证据非法');if(!r.files.length){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}for(const f of r.files){if(!f.source.startsWith(current+'/')||!f.target.startsWith(SPEC_PREFIX))throw Error('Spec 路径不正确（目标须以 '+SPEC_PREFIX+' 开头）');if(sha(read(f.source))!==f.sourceHash||sha(read(f.target))!==f.targetHash)throw Error('Spec 同步证据过期');}if(r.reviewed!==true)throw Error('Spec 合并未核对');}
 function validate(s,id,{approval=true}={}){
  const n=node(id);for(const p of files(n)){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;if(!read(p).trim())throw Error('产物为空 '+p);}
@@ -96,9 +111,11 @@ function doctor(){
  if(problems.length){console.log('PROBLEMS:');for(const p of problems)console.log('- '+p);process.exitCode=1;}else console.log('OK');
 }
 try{
- if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--timeout <秒>] -- <命令> | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | handoff | doctor | reopen <node> | migrate | archive
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
-证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝；run 只看退出码，不校验命令语义，请自行确保命令真实覆盖被测内容。
+证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
+断言：--expect <正则> 要求输出命中（可重复多次），--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。所有校验在命令执行前完成，失败不会覆盖已通过的同 id 证据（失败现场写入 <id>.failed.json）。
+需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 的用例 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后运行 migrate 迁移进行中的状态。
 Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: COMET_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
  else if(cmd==='doctor'){doctor();}
@@ -159,18 +176,20 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(!['execute','verify'].includes(s.currentNode))throw Error('只有 execute/verify 阶段可生成证据');
     if(!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,79}$/.test(arg||''))throw Error('evidence-id 使用字母数字和连字符');
     const rest=process.argv.slice(4),sep=rest.indexOf('--');
-    if(sep<0||sep===rest.length-1)throw Error('用法: run <id> [--input <路径>]... [--timeout <秒>] -- <命令>');
+    if(sep<0||sep===rest.length-1)throw Error('用法: run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令>');
     const flags=rest.slice(0,sep),cmdArgs=rest.slice(sep+1),extraInputs=[];
-    let timeoutMs=30*60*1000;
-    for(let i=0;i<flags.length;i++){if(flags[i]==='--input'&&flags[i+1])extraInputs.push(flags[++i]);else if(flags[i]==='--timeout'&&flags[i+1]){const sec=Number(flags[++i]);if(!(sec>0))throw Error('--timeout 需为正数秒');timeoutMs=sec*1000;}else throw Error('无法识别的参数 '+flags[i]);}
+    let timeoutMs=30*60*1000,expects=[],minOutput=0;
+    for(let i=0;i<flags.length;i++){
+     if(flags[i]==='--input'&&flags[i+1])extraInputs.push(flags[++i]);
+     else if(flags[i]==='--expect'&&flags[i+1])expects.push(flags[++i]);
+     else if(flags[i]==='--min-output'&&flags[i+1]){const n=Number(flags[++i]);if(!(n>=0))throw Error('--min-output 需为非负数');minOutput=n;}
+     else if(flags[i]==='--timeout'&&flags[i+1]){const sec=Number(flags[++i]);if(!(sec>0))throw Error('--timeout 需为正数秒');timeoutMs=sec*1000;}
+     else throw Error('无法识别的参数 '+flags[i]);
+    }
     const command=cmdArgs.map(shellQuote).join(' ');
-    const r=spawnSync(command,{shell:true,cwd:root,encoding:'utf8',timeout:timeoutMs,maxBuffer:64*1024*1024});
-    const log=logsDir+'/'+arg+'.log';
-    writeRaw(log,['$ '+command,'',r.stdout||'',r.stderr||'',r.error?'[error] '+r.error.message:'','[exit] '+(r.status===null?'signal '+(r.signal||'?'):r.status)].join('\n'));
+    // 先算证据输入并校验，再执行命令：否则命令已产生副作用（写库、发请求、改文件）才因参数非法报错。
     const inputs=boundInputs(s,extraInputs);
     if(s.currentNode==='execute'){
-     // 任务 modules 必须真实存在并计入证据输入：modules 里的路径既不存在也不报错时，
-     // 证据就只绑定上游文档，源码改动不会使证据过期（历史缺陷）。此处强制校验。
      const ts=json(current+'/tasks.json'),t=Array.isArray(ts)?ts.find(x=>x.id===arg):null;
      if(t){
       const bad=(t.modules||[]).filter(m=>{try{return !fs.existsSync(safe(m));}catch{return true;}});
@@ -181,9 +200,28 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     // 证据输入必须至少覆盖一个非文档（源码/配置）文件，否则该证据无法反映实现变化。
     const docPrefix=current+'/';
     if(!Object.keys(inputs).some(p=>!p.startsWith(docPrefix)))throw Error('证据输入只包含本工作流文档，未绑定任何实现文件：请用 --input 指定相关源码，或检查任务 modules');
-    const ev={changeId:s.changeId,status:r.status===0?'passed':'failed',command,recordedAt:new Date().toISOString(),inputs,log};
-    const ep=evDir+'/'+arg+'.json';write(ep,ev);save(s,'run '+arg+'='+ev.status);
-    console.log('EVIDENCE: '+ep);console.log('STATUS: '+ev.status);if(ev.status!=='passed')process.exitCode=1;
+    if(!expects.length&&minOutput<=0)console.error('WARN: 未使用 --expect/--min-output，证据仅以退出码判定；命令语义无法被脚本校验。');
+    const r=spawnSync(command,{shell:true,cwd:root,encoding:'utf8',timeout:timeoutMs,maxBuffer:64*1024*1024});
+    const out=(r.stdout||'')+'\n'+(r.stderr||'');
+    // 断言：退出码 0 且全部 --expect 模式命中、输出量达标，才算 passed。
+    const unmet=expects.filter(pat=>{try{return !new RegExp(pat,'m').test(out);}catch(e){throw Error('--expect 不是合法正则: '+pat+' ('+e.message+')');}});
+    const bodyLen=out.trim().length;
+    const ok=r.status===0&&!unmet.length&&bodyLen>=minOutput;
+    const log=logsDir+'/'+arg+'.log';
+    writeRaw(log,['$ '+command,'',r.stdout||'',r.stderr||'',r.error?'[error] '+r.error.message:'','[exit] '+(r.status===null?'signal '+(r.signal||'?'):r.status),
+     expects.length?'[expect] '+expects.map(p=>p+' -> '+(unmet.includes(p)?'MISS':'HIT')).join('; '):'',
+     minOutput?'[min-output] '+minOutput+' (actual '+bodyLen+')':''].filter(Boolean).join('\n'));
+    const ev={changeId:s.changeId,status:ok?'passed':'failed',command,recordedAt:new Date().toISOString(),inputs,log,
+     ...(expects.length?{expects}:{}),...(minOutput?{minOutput}:{})};
+    const ep=evDir+'/'+arg+'.json';
+    // 失败的 run 不得覆盖已登记的好证据：否则一次误操作的重跑会摧毁账本里通过的记录。
+    // 改为落到 <id>.failed.json 保留失败现场，原证据保持不变。
+    const prevPassed=fs.existsSync(safe(ep))?(()=>{try{return JSON.parse(fs.readFileSync(safe(ep),'utf8')).status==='passed';}catch{return false;}})():false;
+    const target=ok?ep:evDir+'/'+arg+'.failed.json';
+    write(target,ev);
+    if(!ok&&prevPassed)console.error('NOTE: 原通过证据保持不变，失败现场写入 '+target);
+    save(s,'run '+arg+'='+ev.status);
+    console.log('EVIDENCE: '+target);console.log('STATUS: '+ev.status);if(!ok)process.exitCode=1;
    }else if(cmd==='task'){
     if(s.currentNode!=='execute')throw Error('只有执行阶段可更新任务');
     const ts=tasks(),t=ts.find(x=>x.id===arg);if(!t||!['pending','in_progress','blocked','done'].includes(value))throw Error('任务或状态非法');

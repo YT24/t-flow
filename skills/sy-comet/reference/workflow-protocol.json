@@ -7,7 +7,9 @@
   "config": {
     "specTargetPrefix": "openspec/specs/",
     "specSyncRequired": true,
-    "maxVerifyFailures": 3
+    "maxVerifyFailures": 3,
+    "requirementIdPattern": "REQ-\\d+",
+    "requireCoverage": true
   },
   "nodes": [
     {
