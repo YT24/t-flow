@@ -103,45 +103,63 @@ test('evidence log path must stay inside the workflow logs directory',t=>{
  const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据日志必须位于/);
 });
 
-// —— UI 场景路由 ——
-test('ui-routing lists scenarios and marks the bundled fallback available',t=>{
+
+// —— UI 设计 Skill：主/兜底 + 自动安装 ——
+test('ui-routing reports the primary and fallback skills as available',t=>{
  const f=fixture(t);const r=f.run('ui-routing');
  assert.equal(r.code,0,r.out);
- for(const id of ['admin','brand','marketing'])assert.match(r.out,new RegExp(id));
- assert.match(r.out,/fallback: frontend-design（已安装）/);
- assert.match(r.out,/sy-hifi-prototype（未安装）/);
+ assert.match(r.out,/主 Skill: ui-ux-pro-max（可用）/);
+ assert.match(r.out,/兜底: frontend-design（可用）/);
 });
-test('ui-use records the scenario and warns when the primary skill is missing',t=>{
- const f=fixture(t);f.atUi();
- const a=f.run('ui-use','admin');assert.equal(a.code,0,a.out);
- assert.match(a.out,/sy-hifi-prototype（未安装，改用 fallback frontend-design）/);
- assert.match(a.out,/WARN/);
- assert.equal(f.read('.comet/runs/sy-comet/state.json').uiUsage.admin.primaryAvailable,false);
- const m=f.run('ui-use','marketing','frontend-design');assert.equal(m.code,0,m.out);
- assert.match(m.out,/frontend-design（已安装）/);
- assert.doesNotMatch(m.out,/WARN/);
+test('ensure-skills installs both skills into the project and links .claude/skills',t=>{
+ const f=fixture(t);
+ const r=f.run('ensure-skills');assert.equal(r.code,0,r.out);
+ assert.match(r.out,/已自动安装/);
+ for(const name of ['ui-ux-pro-max','frontend-design']){
+  assert.ok(fs.existsSync(path.join(f.root,'.agents','skills',name,'SKILL.md')),name+' 应装到 .agents/skills');
+  const link=path.join(f.root,'.claude','skills',name);
+  assert.ok(fs.existsSync(link),name+' 应有 .claude 链接');
+  assert.ok(fs.lstatSync(link).isSymbolicLink(),name+' 的 .claude 条目应是符号链接');
+ }
+ // 幂等：再跑一次不重复安装
+ const again=f.run('ensure-skills');assert.equal(again.code,0,again.out);
+ assert.match(again.out,/已就位于/);
 });
-test('ui-use rejects unknown scenario and is limited to the ui node',t=>{
- const f=fixture(t);f.atUi();
- const bad=f.run('ui-use','bogus');assert.equal(bad.code,1);assert.match(bad.out,/未知场景/);
+test('ensure-skills does not copy python caches',t=>{
+ const f=fixture(t);f.ok('ensure-skills');
+ const pyc=spawnSync('find',[path.join(f.root,'.agents','skills'),'-name','__pycache__']).stdout.toString().trim();
+ assert.equal(pyc,'','不应包含 __pycache__');
+});
+test('ui-use records the primary skill by default',t=>{
+ const f=fixture(t);f.atUi();f.ok('ensure-skills');
+ const r=f.run('ui-use');assert.equal(r.code,0,r.out);
+ assert.match(r.out,/USED: ui-ux-pro-max（主 Skill）/);
+ assert.equal(f.read('.comet/runs/sy-comet/state.json').uiSkill.used,'ui-ux-pro-max');
+});
+test('ui-use with the fallback warns but is allowed',t=>{
+ const f=fixture(t);f.atUi();f.ok('ensure-skills');
+ const r=f.run('ui-use','frontend-design');assert.equal(r.code,0,r.out);
+ assert.match(r.out,/兜底 Skill/);assert.match(r.out,/WARN/);
+ assert.equal(f.read('.comet/runs/sy-comet/state.json').uiSkill.used,'frontend-design');
+});
+test('ui-use rejects an unrelated skill name and non-ui nodes',t=>{
+ const f=fixture(t);f.atUi();f.ok('ensure-skills');
+ const bad=f.run('ui-use','some-other-skill');assert.equal(bad.code,1);assert.match(bad.out,/须为 ui-ux-pro-max 或 frontend-design/);
  const g=fixture(t);g.ok('init','test');
- const wrong=g.run('ui-use','marketing');assert.equal(wrong.code,1);assert.match(wrong.out,/只能在 ui 节点/);
+ assert.equal(g.run('ui-use').code,1);
 });
-test('doctor flags ui.md without a recorded scenario once past ui',t=>{
+test('doctor flags ui.md without a recorded skill once past ui',t=>{
  const f=fixture(t);f.atUi();f.doc('ui.md','prototype');
  f.ok('approve','ui','confirmed');f.ok('advance');
- const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/未记录场景选择/);
+ const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/未记录所用设计 Skill/);
 });
-test('doctor stays OK when ui is skipped or the scenario is recorded',t=>{
+test('doctor stays OK when the skill is recorded or ui was skipped',t=>{
+ const rec=fixture(t);rec.atUi();rec.ok('ensure-skills');rec.ok('ui-use');rec.doc('ui.md','prototype');rec.ok('approve','ui','confirmed');rec.ok('advance');rec.ok('doctor');
  const skipped=fixture(t);skipped.setup();skipped.ok('doctor');
- const rec=fixture(t);rec.atUi();rec.ok('ui-use','marketing','frontend-design');rec.doc('ui.md','prototype');rec.ok('approve','ui','confirmed');rec.ok('advance');rec.ok('doctor');
 });
-test('doctor flags a missing primary skill recorded without a substitute',t=>{
- const f=fixture(t);f.atUi();f.ok('ui-use','admin');f.doc('ui.md','prototype');
- const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/未记录替代 Skill/);
-});
-test('doctor does not demand a scenario when ui was explicitly skipped',t=>{
- const f=fixture(t);f.atUi();f.doc('ui.md','stale artifact left behind');
- f.ok('skip','ui','no UI');f.doc('design.md','design');
- const r=f.run('doctor');assert.equal(r.code,0,r.out);assert.doesNotMatch(r.out,/未记录场景选择/);
+test('doctor reports a missing bundled skill as a distribution fault',t=>{
+ const f=fixture(t);
+ fs.rmSync(path.join(f.base,'skills','ui-ux-pro-max'),{recursive:true,force:true});
+ const r=f.run('doctor');assert.equal(r.code,1);
+ assert.match(r.out,/声明为分发内容但本包缺失: ui-ux-pro-max/);
 });

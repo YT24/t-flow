@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const MANIFEST = '.sy-comet-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
@@ -68,17 +68,14 @@ const skills = fs.readdirSync(srcRoot, { withFileTypes: true })
   .filter((e) => e.isDirectory() && fs.existsSync(path.join(srcRoot, e.name, 'SKILL.md')))
   .map((e) => e.name);
 
-// UI 场景路由声明的可选依赖：本包不一定分发，缺失时只提示，不阻断安装。
+// UI 设计 Skill：协议声明的主/兜底 Skill 应当随包分发；缺失时提示（ui 节点会尝试自动安装）。
 const routingPath = path.join(srcRoot, 'sy-comet', 'reference', 'workflow-protocol.json');
-let optionalSkills = [];
+let missingUiSkills = [];
 try {
   const routing = JSON.parse(fs.readFileSync(routingPath, 'utf8')).uiSkillRouting;
   const bundled = new Set(skills);
-  const seen = new Set();
-  for (const sc of routing?.scenarios || []) {
-    for (const name of [sc.primary, ...(sc.supports || [])]) {
-      if (name && !bundled.has(name) && !seen.has(name)) { seen.add(name); optionalSkills.push({ name, scenario: sc.id, role: sc.primary === name ? '主' : '可选叠加' }); }
-    }
+  for (const name of routing?.distribution || []) {
+    if (name && !bundled.has(name)) missingUiSkills.push(name);
   }
 } catch { /* 协议缺失时跳过提示 */ }
 
@@ -176,9 +173,9 @@ if (kept.length) {
   console.log('kept（新包已删除但你本地改过，保留）:');
   for (const k of kept) console.log(`- ${k}`);
 }
-if (optionalSkills.length) {
-  console.log('UI 场景路由的可选依赖（本包不分发，缺失时对应场景回退到内置 frontend-design）:');
-  for (const s of optionalSkills) console.log(`- ${s.name}（场景 ${s.scenario} 的${s.role} Skill）`);
+if (missingUiSkills.length) {
+  console.log('警告：协议声明为分发内容的 UI 设计 Skill 未随本包附带，UI 节点将无法自动安装:');
+  for (const name of missingUiSkills) console.log(`- ${name}`);
 }
 if (!apply) console.log('No files were written. 加 --apply 真实执行。');
 if (conflicts.length) process.exitCode = 1;

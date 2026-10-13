@@ -8,7 +8,7 @@ clarify → specify → ui → design → plan → execute → verify → archiv
 ```
 
 - 需求澄清由 `grill-me`（grilling）车轮式追问完成；UI 阶段按**场景路由**选择设计 Skill（见下），不再硬编码单一依赖
-- UI 场景路由：`admin`（多角色/审批/后台）→ `sy-hifi-prototype`、`brand`（有强制品牌规范）→ 品牌 Skill（如 `sy-frontend-design`）、`marketing`（C 端/落地页）→ 内置 `frontend-design`；兜底 `frontend-design`。场景表在 `workflow-protocol.json` 的 `uiSkillRouting`，改动即变更 protocolHash；`yt.mjs ui-routing` 查看、`yt.mjs ui-use <场景>` 记录实际所用，缺失主 Skill 时会在 ui.md 留痕并使用兜底
+- UI 设计 Skill：主 `ui-ux-pro-max`（50+ 风格、161 配色、57 字体配对、10 技术栈、99 条 UX 准则，含对比度 4.5:1 / 44×44 触控目标 / 键盘导航等无障碍硬指标），兜底 `frontend-design`（Anthropic 官方，纯审美指导，不覆盖五态与角色权限）。二者随包分发；`yt.mjs ensure-skills` 自动安装到项目 `.agents/skills/` 并在 `.claude/skills/` 建同名符号链接（Claude 与 agent 两条发现路径都可命中），已存在则不重复复制。`ui-routing` 查看可用性，`ui-use [Skill名]` 记录本次所用；以兜底完成会告警并在 ui.md 留痕
 - 五个用户确认门禁：需求澄清 / PRD 与增量 Spec / UI 原型 / 技术设计 / 交付验收（确认绑定产物指纹，产物一变确认自动失效）；门禁由 `workflow-protocol.json` 各节点的 `approval` 声明，改动即变更 protocolHash 需 migrate
 - 无界面需求可 `skip ui`，小型变更（无架构调整、无数据迁移、无新接口）可 `skip design`，skip 原因均落盘；skip 由 agent 自行判定并记录，不是用户确认的替代品，评审时应复核原因
 - 执行证据由 `yt.mjs run` 真实执行命令生成（限 execute/verify 阶段），禁止手写；任务 `modules` 必须非空且路径真实存在，证据必须绑定至少一个实现文件，绑定源码内容或目录文件清单变化时证据自动过期
@@ -59,6 +59,7 @@ node install.mjs --project /path/to/your-project --update --apply --force
 node .agents/skills/sy-comet/scripts/yt.mjs status   # 查看状态/断点
 node .agents/skills/sy-comet/scripts/yt.mjs help     # 全部命令
 node .agents/skills/sy-comet/scripts/yt.mjs doctor   # 自检
+node .agents/skills/sy-comet/scripts/yt.mjs ensure-skills  # 补齐 UI 设计 Skill（装到项目 + 链接 .claude/skills）
 ```
 
 ## Git 管理建议
@@ -71,9 +72,10 @@ node .agents/skills/sy-comet/scripts/yt.mjs doctor   # 自检
 - `skills/sy-comet/` — 入口 Skill（protocol、脚本、模板、参考文档）
 - `skills/sy-comet-<node>/` — 8 个节点 Skill
 - `skills/grill-me` `skills/grilling` — 需求澄清依赖
-- `skills/frontend-design` — UI 兜底设计 Skill（同时是 `marketing` 场景主 Skill）
+- `skills/frontend-design` — UI 兜底设计 Skill（Anthropic 官方，Apache-2.0）
+- `skills/ui-ux-pro-max` — UI 主设计 Skill（含 `data/` 检索库与 `scripts/search.py`）
 
-UI 场景路由中 `admin` / `brand` 的主 Skill（`sy-hifi-prototype`、`sy-frontend-design`、`ui-ux-pro-max`）**不在本包分发范围**——它们通常是团队/公司内部资产。安装脚本会在结尾列出这些可选依赖；缺失时对应场景回退到内置 `frontend-design` 并在 `ui.md` 记录实际所用 Skill，不会阻断工作流。
+两个 UI 设计 Skill 都随包分发，缺失时由 `yt.mjs ensure-skills` 自动安装，不需手工放置。`ui-ux-pro-max` 的检索脚本需要 Python 3（`python3 scripts/search.py "<产品类型> <行业> <关键词>" --design-system`），缺失时该 Skill 仍可用于人工检索其 `data/` 下的 CSV。
 
 ## 许可
 

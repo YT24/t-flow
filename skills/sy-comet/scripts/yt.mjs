@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -127,42 +128,87 @@ function boundInputs(s,extra,{strict=true}={}){
 }
 function shellQuote(a){return /^[\w@%+=:,./-]+$/.test(a)?a:"'"+a.replace(/'/g,"'\\''")+"'";}
 function readStdin(){try{if(!fs.fstatSync(0).isCharacterDevice())return fs.readFileSync(0,'utf8');}catch{}return null;}
-// UI 场景路由：按 protocol.uiSkillRouting 选择设计 Skill，而非硬编码单一依赖。
+// —— UI 设计 Skill 路由与自动安装 ——
+// 协议声明主/兜底 Skill；两者都随本包分发在 skills/ 下，本地缺失时自动补齐。
 const UI_ROUTING=protocol.uiSkillRouting||null;
-// Skill 是否可用：本包 skills/ 下自带，或目标项目 .agents/skills/ 下已安装。
-function skillAvailable(name){
- const dirs=[path.join(pkg,'..',name),path.join(root,'.agents','skills',name),path.join(root,'.claude','skills',name)];
- return dirs.some(d=>fs.existsSync(path.join(d,'SKILL.md')));
+const BUNDLED_SKILLS=path.join(pkg,'..');
+// Skill 是否可用：本包自带，或在目标项目 / 全局的 .agents|.claude/skills 下已安装（含符号链接）。
+function skillDirs(name){
+ return [
+  path.join(BUNDLED_SKILLS,name),
+  path.join(root,'.agents','skills',name),
+  path.join(root,'.claude','skills',name),
+  path.join(os.homedir(),'.agents','skills',name),
+  path.join(os.homedir(),'.claude','skills',name),
+ ];
 }
-function routeOf(id){return UI_ROUTING?.scenarios?.find(s=>s.id===id)||null;}
+function skillAvailable(name){return skillDirs(name).some(d=>{try{return fs.existsSync(path.join(d,'SKILL.md'));}catch{return false;}});}
+// 建立 .claude/skills 与 .agents/skills 的互链，使 Claude 与 agent 两条发现路径都能命中。
+function linkSkill(name){
+ const pairs=[[path.join(root,'.agents','skills',name),path.join(root,'.claude','skills',name)],
+              [path.join(os.homedir(),'.agents','skills',name),path.join(os.homedir(),'.claude','skills',name)]];
+ for(const [src,dst] of pairs){
+  try{
+   if(!fs.existsSync(path.join(src,'SKILL.md')))continue;
+   if(fs.existsSync(dst))continue;
+   fs.mkdirSync(path.dirname(dst),{recursive:true});
+   fs.symlinkSync(path.relative(path.dirname(dst),src),dst);
+  }catch{/* 链接失败不阻断：另一条路径仍可用 */ }
+ }
+}
+// 确保路由声明的 Skill 就位。包内自带的不等于"项目里可用"——Claude 与多数 agent 只从
+// .agents/skills 或 .claude/skills 发现 Skill，因此只在本包内的也要落到目标目录。
+function ensureUiSkills({auto=true,scope='project'}={}){
+ if(!UI_ROUTING)throw Error('协议缺少 uiSkillRouting 配置，请运行 migrate 或补全 workflow-protocol.json');
+ const names=[UI_ROUTING.primary,UI_ROUTING.fallback,...(UI_ROUTING.distribution||[])].filter(Boolean)
+  .filter((n,i,a)=>a.indexOf(n)===i);
+ const base=scope==='global'?path.join(os.homedir(),'.agents','skills'):path.join(root,'.agents','skills');
+ const out=[];
+ for(const name of names){
+  const dest=path.join(base,name);
+  if(fs.existsSync(path.join(dest,'SKILL.md'))){linkSkill(name);out.push({name,available:true,action:'已就位于 '+dest});continue;}
+  if(!auto){out.push({name,available:false,action:'缺失且未自动安装'});continue;}
+  const bundled=fs.existsSync(path.join(BUNDLED_SKILLS,name,'SKILL.md'));
+  if(!bundled){out.push({name,available:false,action:'本包不含该 Skill，请手动放置到 '+dest});continue;}
+  try{
+   fs.mkdirSync(path.dirname(dest),{recursive:true});
+   fs.cpSync(path.join(BUNDLED_SKILLS,name),dest,{recursive:true,filter:s=>!s.includes('__pycache__')&&!s.endsWith('.pyc')});
+   linkSkill(name);
+   out.push({name,available:fs.existsSync(path.join(dest,'SKILL.md')),action:'已自动安装到 '+dest});
+  }catch(e){out.push({name,available:false,action:'安装失败：'+e.message});}
+ }
+ return out;
+}
 function uiRouting(){
  if(!UI_ROUTING)throw Error('协议缺少 uiSkillRouting 配置，请运行 migrate 或补全 workflow-protocol.json');
- const lines=[];
- for(const sc of UI_ROUTING.scenarios){
-  const av=skillAvailable(sc.primary);
-  lines.push(`${sc.id}\t${sc.label}\t主: ${sc.primary}${av?'':'（未安装）'}\t场景: ${sc.when}`);
-  if(sc.supports?.length)lines.push(`\t可选叠加: ${sc.supports.map(s=>s+(skillAvailable(s)?'':'（未安装）')).join(', ')}`);
- }
- return {scenarios:UI_ROUTING.scenarios,fallback:UI_ROUTING.fallback,lines};
+ const lines=[`主 Skill: ${UI_ROUTING.primary}（${skillAvailable(UI_ROUTING.primary)?'可用':'缺失'}）`,
+  `兜底: ${UI_ROUTING.fallback}（${skillAvailable(UI_ROUTING.fallback)?'可用':'缺失'}）`];
+ for(const n of UI_ROUTING.distribution||[])lines.push(`分发内容: ${n}${skillAvailable(n)?'':'（缺失）'}`);
+ return {primary:UI_ROUTING.primary,fallback:UI_ROUTING.fallback,lines};
 }
 function doctor(){
  const problems=[];
  for(const n of nodes){if(!fs.existsSync(path.join(pkg,'..','sy-comet-'+n.id,'SKILL.md')))problems.push('缺少节点 Skill: sy-comet-'+n.id);}
- // UI 场景路由自检：协议需声明路由；ui 节点已产出 ui.md 时应有场景选择记录。
- if(!UI_ROUTING)problems.push('协议缺少 uiSkillRouting：UI 节点无法按场景路由设计 Skill');
+ // UI 设计 Skill 自检：主/兜底 Skill 必须可用（缺失时可自动安装）；ui.md 产出时须记录所用 Skill。
+ if(!UI_ROUTING)problems.push('协议缺少 uiSkillRouting：UI 节点无法确定设计 Skill');
  else{
-  for(const sc of UI_ROUTING.scenarios||[]){if(!sc.id||!sc.primary||!sc.when)problems.push('uiSkillRouting 场景字段不完整: '+(sc.id||'<无 id>'));}
+  if(!UI_ROUTING.primary)problems.push('uiSkillRouting 缺少 primary');
   if(!UI_ROUTING.fallback)problems.push('uiSkillRouting 缺少 fallback');
-  if(UI_ROUTING.fallback&&!skillAvailable(UI_ROUTING.fallback))problems.push('UI 兜底 Skill 不可用: '+UI_ROUTING.fallback);
+  for(const name of [UI_ROUTING.primary,UI_ROUTING.fallback].filter(Boolean)){
+   if(!skillAvailable(name))problems.push('UI 设计 Skill 不可用: '+name+'（运行 ensure-skills 自动安装，或手动放置）');
+  }
+  const dist=UI_ROUTING.distribution||[];
+  for(const name of dist){if(!fs.existsSync(path.join(BUNDLED_SKILLS,name,'SKILL.md')))problems.push('声明为分发内容但本包缺失: '+name);}
  }
  if(fs.existsSync(safe(current+'/ui.md'))){
   let st=null;try{st=JSON.parse(fs.readFileSync(stateFile));}catch{}
-  const used=st?.uiUsage||{};
-  // ui 被 skip 时不存在场景选择的概念；残留的 ui.md 交由其它检查处理，不在此报场景缺失。
+  const rec=st?.uiSkill||null;
   const uiSkipped=!!st?.skipped?.ui;
-  if(st&&st.currentNode&&!uiSkipped&&!Object.keys(used).length&&nodes.findIndex(n=>n.id===st.currentNode)>nodes.findIndex(n=>n.id==='ui'))
-   problems.push('ui.md 已产出但未记录场景选择：运行 ui-use <场景> 记录所用设计 Skill');
-  for(const [k,v]of Object.entries(used)){if(!routeOf(k))problems.push('场景记录指向未知场景 '+k);else if(v.primaryAvailable===false&&!(v.secondary&&v.secondary!==routeOf(k).primary))problems.push('场景 '+k+' 的主 Skill 不可用但未记录替代 Skill');}
+  if(st&&st.currentNode&&!uiSkipped&&!rec&&nodes.findIndex(n=>n.id===st.currentNode)>nodes.findIndex(n=>n.id==='ui'))
+   problems.push('ui.md 已产出但未记录所用设计 Skill：运行 ui-use <Skill名> 记录');
+  if(rec&&!rec.used)problems.push('ui-use 记录缺少所用 Skill 名');
+  if(rec&&rec.primaryAvailable===false&&!rec.used)
+   problems.push('主 Skill 不可用时未记录实际所用 Skill');
  }
  for(const t of ['evidence.json','spec-sync.json','test-results.json'])if(!fs.existsSync(path.join(pkg,'templates',t)))problems.push('缺少模板 '+t);
  if(!fs.existsSync(stateFile))console.log('state: 未初始化（可 init 新变更）');
@@ -190,33 +236,49 @@ function doctor(){
  if(problems.length){console.log('PROBLEMS:');for(const p of problems)console.log('- '+p);process.exitCode=1;}else console.log('OK');
 }
 try{
- if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ui-routing | ui-use <场景> [实际所用Skill] | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use [Skill名] | handoff | doctor | reopen <node> | migrate | archive
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
 证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
 证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
 断言：--expect <正则> 要求输出命中（可重复多次），--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。参数校验在命令执行前完成；固定证据路径记录最新结果，失败阻断推进；每次执行的证据与日志独立保留。
 需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 中已通过必测用例的 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后运行 migrate 迁移进行中的状态。
-UI 场景路由：ui 节点按项目场景选择设计 Skill（ui-routing 查看；ui-use <场景> 记录实际所用）。场景: ${UI_ROUTING?UI_ROUTING.scenarios.map(s=>s.id+'→'+s.primary).join(' / '):'未配置'}；兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}。
+UI 设计 Skill：主 ${UI_ROUTING?UI_ROUTING.primary:'ui-ux-pro-max'}，兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}（ui-routing 查看；ui-use [Skill名] 记录实际所用）。缺失时运行 ensure-skills 自动安装到项目 .agents/skills/ 并链接 .claude/skills/（Claude 与 agent 两条发现路径都可用）。
 Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: COMET_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
+ else if(cmd==='ensure-skills'){
+  const results=ensureUiSkills({auto:true});
+  for(const r of results)console.log((r.available?'OK   ':'FAIL ')+r.name+': '+r.action);
+  const bad=results.filter(r=>!r.available);
+  if(bad.length){console.error('BLOCKED: 以下 Skill 仍不可用: '+bad.map(b=>b.name).join(', '));process.exitCode=1;}
+  else console.log('UI 设计 Skill 就位（项目 .agents/skills/ 与 .claude/skills/ 均可发现）。');
+ }
  else if(cmd==='ui-routing'){
   const r=uiRouting();
-  console.log('UI 场景路由（按项目场景选择设计 Skill，改动 protocol 即需 migrate）：');
+  console.log('UI 设计 Skill（改动 protocol 即需 migrate）：');
   for(const l of r.lines)console.log('  '+l);
-  console.log('  fallback: '+r.fallback+'（'+(skillAvailable(r.fallback)?'已安装':'未安装')+'）');
-  console.log(UI_ROUTING.fallbackNote||'');
+  console.log('  '+(UI_ROUTING.primaryNote||''));
+  console.log('  '+(UI_ROUTING.fallbackNote||''));
+  if(UI_ROUTING.fiveStatesRequired)console.log('  '+(UI_ROUTING.fiveStatesNote||''));
  }
  else if(cmd==='ui-use'){
   const s=state();
-  if(s.currentNode!=='ui')throw Error('只能在 ui 节点记录场景选择（当前 '+s.currentNode+'）');
-  const sc=routeOf(arg);
-  if(!sc)throw Error('未知场景 '+arg+'；可用: '+UI_ROUTING.scenarios.map(x=>x.id).join('/'));
-  const chosenDesc=value?.trim();
-  const primaryOk=skillAvailable(sc.primary);
-  (s.uiUsage=s.uiUsage||{})[arg]={secondary:chosenDesc||sc.primary,at:new Date().toISOString(),primaryAvailable:primaryOk};
-  save(s,'ui-use '+arg);print(s);
-  console.log('SCENARIO: '+arg+' | 主 Skill: '+sc.primary+(primaryOk?'（已安装）':'（未安装，改用 fallback '+UI_ROUTING.fallback+'）'));
-  if(!primaryOk)console.log('WARN: 主 Skill '+sc.primary+' 不可用，请改用 '+UI_ROUTING.fallback+'，并在 ui.md 说明实际所用 Skill');
+  if(s.currentNode!=='ui')throw Error('只能在 ui 节点记录设计 Skill（当前 '+s.currentNode+'）');
+  const primary=UI_ROUTING.primary,fallback=UI_ROUTING.fallback;
+  const primaryOk=skillAvailable(primary);
+  // 参数：允许显式指定实际所用 Skill（如 ui-use frontend-design）
+  const used=arg?.trim()||(primaryOk?primary:fallback);
+  if(!used)throw Error('ui-use 需要 Skill 名，或先配置 uiSkillRouting');
+  if(used!==primary&&used!==fallback)throw Error('所用 Skill 须为 '+primary+' 或 '+fallback+'（协议 uiSkillRouting 可改，改了需 migrate）');
+  if(!skillAvailable(used)){
+   const res=ensureUiSkills({auto:true});
+   const one=res.find(r=>r.name===used);
+   console.log('AUTO: '+(one?one.action:'已尝试自动安装 '+used));
+   if(!skillAvailable(used))throw Error('Skill '+used+' 仍不可用：'+((one||{}).action||'请手动放置'));
+  }
+  s.uiSkill={used,primary,primaryAvailable:primaryOk,at:new Date().toISOString()};
+  save(s,'ui-use '+used);print(s);
+  console.log('USED: '+used+(used===primary?'（主 Skill）':'（兜底 Skill；主 Skill '+primary+(primaryOk?'可用但你选择了兜底':'不可用')+'）'));
+  if(used!==primary)console.log('WARN: 未使用主 Skill '+primary+'，请在 ui.md 说明原因并自行补齐五态与实测结论');
  }
  else if(cmd==='doctor'){doctor();}
  else if(cmd==='init'){

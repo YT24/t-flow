@@ -12,35 +12,14 @@
     "requireCoverage": true
   },
   "uiSkillRouting": {
-    "comment": "UI 节点按场景选择设计 Skill，而非硬编码单一依赖。primary 为该场景的主 Skill，supports 为可选叠加。分发包含 primary/supports 里 required:true 的 Skill；required:false 的缺失时只在 ui.md 记录实际使用情况，不阻断。",
-    "scenarios": [
-      {
-        "id": "admin",
-        "label": "政务/企业后台、多角色权限、含审批流的管理系统",
-        "when": "需求含多角色权限分化、审批流、或管理后台（列表/表单/看板）形态",
-        "primary": "sy-hifi-prototype",
-        "supports": ["ui-ux-pro-max"],
-        "note": "sy-hifi-prototype 自带角色权限矩阵、五态、浏览器实测与交付审计，与 UI 节点门禁同构；它不是本包分发内容，缺失时改用 fallback。"
-      },
-      {
-        "id": "brand",
-        "label": "已有公司/品牌设计规范的项目",
-        "when": "项目存在强制品牌规范（自带 design tokens 的 Skill，如 sy-frontend-design）",
-        "primary": "sy-frontend-design",
-        "supports": [],
-        "note": "品牌一致性优先于审美独特性：此时不使用 frontend-design 的『追求独特方向』取向。"
-      },
-      {
-        "id": "marketing",
-        "label": "C 端页面、落地页、营销页、展示型站点",
-        "when": "面向外部用户、以传达与转化为目标、无复杂角色权限",
-        "primary": "frontend-design",
-        "supports": ["ui-ux-pro-max"],
-        "note": "本包内置 frontend-design（Anthropic 官方，Apache-2.0），无需额外安装。"
-      }
-    ],
+    "comment": "UI 节点使用的设计 Skill。二者都随本包分发（skills/ 下），本地缺失时由 install/ensure-skills 自动补齐到项目 .agents/skills/ 并链接到 .claude/skills/。primary 为主 Skill，fallback 仅在其不可用时兜底。",
+    "primary": "ui-ux-pro-max",
     "fallback": "frontend-design",
-    "fallbackNote": "无法判断场景或上述主 Skill 不可用时，用内置 frontend-design 兜底；仍须在 ui.md 记录五态与实测结论。"
+    "distribution": ["ui-ux-pro-max", "frontend-design"],
+    "primaryNote": "ui-ux-pro-max 覆盖 50+ 风格、161 配色、57 字体配对、10 个技术栈与 99 条 UX 准则，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），适用于后台、C 端、移动端全部含界面场景。",
+    "fallbackNote": "frontend-design（Anthropic 官方，Apache-2.0）为纯审美指导，不覆盖五态与角色权限；仅在 ui-ux-pro-max 不可用时兜底，此时须自行补齐五态并在 ui.md 说明。",
+    "fiveStatesRequired": true,
+    "fiveStatesNote": "无论用哪个 Skill，空/加载/错误/无权限/正常五态与浏览器实测结论都必须写入 ui.md——这是本节点的硬要求，不因所选 Skill 而豁免。"
   },
   "nodes": [
     {

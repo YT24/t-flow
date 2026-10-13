@@ -10,19 +10,20 @@ description: 仅由 sy-comet 入口路由到本阶段时使用。
 
 ### Steps
 
-**第一步 · 判定场景并选择设计 Skill（不要跳过）。** 运行 `yt.mjs ui-routing` 查看场景表，按本次 PRD 判定属于哪个场景：
+**第一步 · 备齐设计 Skill 并记录所用。** 运行 `yt.mjs ensure-skills`：它会把主 Skill `ui-ux-pro-max` 与兜底 `frontend-design` 自动安装到项目 `.agents/skills/`，并在 `.claude/skills/` 建立同名符号链接，使 Claude 与 agent 两条发现路径都能命中。已存在时不重复复制。
 
-| 场景 | 何时用 | 主 Skill |
-|---|---|---|
-| `admin` | 多角色权限分化、审批流、管理后台（列表/表单/看板） | `sy-hifi-prototype`（自带权限矩阵、五态、浏览器实测、交付审计） |
-| `brand` | 项目有强制品牌规范（自带 design tokens 的 Skill） | 品牌 Skill（如 `sy-frontend-design`） |
-| `marketing` | C 端页面、落地页、营销页，无复杂权限 | `frontend-design` |
+然后运行 `yt.mjs ui-routing` 查看当前可用性，并用 `yt.mjs ui-use [Skill名]` 记录本次所用：
 
-场景与所用 Skill 必须落盘：`yt.mjs ui-use <场景> [实际所用 Skill]`。若主 Skill 不可用，脚本会告警，此时改用协议 `fallback`（内置 `frontend-design`）并在 ui.md 说明实际所用 Skill。**品牌规范优先于审美独特性**：命中 `brand` 时不要使用 `frontend-design` 的"追求独特视觉方向"取向。
+| Skill | 何时用 |
+|---|---|
+| `ui-ux-pro-max`（主） | 默认选择。覆盖 50+ 风格、161 配色、57 字体配对、10 个技术栈、99 条 UX 准则，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），后台/C 端/移动端都适用 |
+| `frontend-design`（兜底） | 仅当主 Skill 不可用，或你明确判断本次只需要纯审美指导时。它是纯审美指导，**不覆盖五态与角色权限**，须自行补齐 |
 
-**第二步 · 生成原型。** 加载所选 Skill，复用已确认角色/权限/流程。不要自动新增全套 CRUD；只实现本次 PRD 范围。若所选 Skill 自带阶段门禁（如多角色矩阵需先确认），可采用它，但**产出的原型仍须一次性对齐本次 PRD 范围**，不因它的分阶段节奏而超出 PRD。
+不带参数时 `ui-use` 默认记录主 Skill。以兜底完成会打印 WARN，须在 ui.md 写明原因。
 
-**第三步 · 写 ui.md**，至少包含：原型路径、所用场景与 Skill（及主 Skill 不可用时的替代说明）、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。五态是硬要求，不因所选 Skill 不同而豁免——若所选 Skill 不覆盖五态（如 `frontend-design` 只管审美），由你自行补齐并记录。
+**第二步 · 生成原型。** 加载所选 Skill，复用已确认角色/权限/流程；`ui-ux-pro-max` 的 Python 检索脚本（`scripts/search.py`）可按产品类型/行业检索风格与配色，需要时用 `python3` 调用。不要自动新增全套 CRUD；只实现本次 PRD 范围。
+
+**第三步 · 写 ui.md**（可复制 `templates/ui.md`），至少包含：原型路径、所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**——这正是把它写进 ui.md 的原因：主 Skill 覆盖面广，兜底 Skill 不覆盖，靠记录来暴露差距。
 
 没有界面需求时不写 ui.md：向用户说明理由，运行 `yt.mjs skip ui <原因>` 记录后本节点直接完成。工具不具备时不可假装已实测；未实测须写明原因与残余风险。
 

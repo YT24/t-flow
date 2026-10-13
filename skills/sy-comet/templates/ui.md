@@ -1,9 +1,8 @@
 # ui.md
 
-## 场景与所用 Skill
-场景（admin / brand / marketing）：
-所用 Skill：
-主 Skill 不可用时的替代说明（如有）：
+## 所用设计 Skill
+Skill（ui-ux-pro-max / frontend-design）：
+若用兜底 frontend-design，说明原因：
 
 ## 原型
 原型路径：
@@ -19,7 +18,7 @@
 | 正常 | | |
 
 ## 角色与权限
-（若为 admin 场景，列出角色清单与权限矩阵要点；brand/marketing 场景写明无复杂权限分化）
+（列出角色清单与权限矩阵要点；无权限分化时写明）
 
 ## 浏览器实测
 实测结论或未测原因（未实测须写明原因与残余风险，不得假装已实测）：
