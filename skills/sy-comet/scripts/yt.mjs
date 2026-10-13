@@ -127,9 +127,43 @@ function boundInputs(s,extra,{strict=true}={}){
 }
 function shellQuote(a){return /^[\w@%+=:,./-]+$/.test(a)?a:"'"+a.replace(/'/g,"'\\''")+"'";}
 function readStdin(){try{if(!fs.fstatSync(0).isCharacterDevice())return fs.readFileSync(0,'utf8');}catch{}return null;}
+// UI 场景路由：按 protocol.uiSkillRouting 选择设计 Skill，而非硬编码单一依赖。
+const UI_ROUTING=protocol.uiSkillRouting||null;
+// Skill 是否可用：本包 skills/ 下自带，或目标项目 .agents/skills/ 下已安装。
+function skillAvailable(name){
+ const dirs=[path.join(pkg,'..',name),path.join(root,'.agents','skills',name),path.join(root,'.claude','skills',name)];
+ return dirs.some(d=>fs.existsSync(path.join(d,'SKILL.md')));
+}
+function routeOf(id){return UI_ROUTING?.scenarios?.find(s=>s.id===id)||null;}
+function uiRouting(){
+ if(!UI_ROUTING)throw Error('协议缺少 uiSkillRouting 配置，请运行 migrate 或补全 workflow-protocol.json');
+ const lines=[];
+ for(const sc of UI_ROUTING.scenarios){
+  const av=skillAvailable(sc.primary);
+  lines.push(`${sc.id}\t${sc.label}\t主: ${sc.primary}${av?'':'（未安装）'}\t场景: ${sc.when}`);
+  if(sc.supports?.length)lines.push(`\t可选叠加: ${sc.supports.map(s=>s+(skillAvailable(s)?'':'（未安装）')).join(', ')}`);
+ }
+ return {scenarios:UI_ROUTING.scenarios,fallback:UI_ROUTING.fallback,lines};
+}
 function doctor(){
  const problems=[];
  for(const n of nodes){if(!fs.existsSync(path.join(pkg,'..','sy-comet-'+n.id,'SKILL.md')))problems.push('缺少节点 Skill: sy-comet-'+n.id);}
+ // UI 场景路由自检：协议需声明路由；ui 节点已产出 ui.md 时应有场景选择记录。
+ if(!UI_ROUTING)problems.push('协议缺少 uiSkillRouting：UI 节点无法按场景路由设计 Skill');
+ else{
+  for(const sc of UI_ROUTING.scenarios||[]){if(!sc.id||!sc.primary||!sc.when)problems.push('uiSkillRouting 场景字段不完整: '+(sc.id||'<无 id>'));}
+  if(!UI_ROUTING.fallback)problems.push('uiSkillRouting 缺少 fallback');
+  if(UI_ROUTING.fallback&&!skillAvailable(UI_ROUTING.fallback))problems.push('UI 兜底 Skill 不可用: '+UI_ROUTING.fallback);
+ }
+ if(fs.existsSync(safe(current+'/ui.md'))){
+  let st=null;try{st=JSON.parse(fs.readFileSync(stateFile));}catch{}
+  const used=st?.uiUsage||{};
+  // ui 被 skip 时不存在场景选择的概念；残留的 ui.md 交由其它检查处理，不在此报场景缺失。
+  const uiSkipped=!!st?.skipped?.ui;
+  if(st&&st.currentNode&&!uiSkipped&&!Object.keys(used).length&&nodes.findIndex(n=>n.id===st.currentNode)>nodes.findIndex(n=>n.id==='ui'))
+   problems.push('ui.md 已产出但未记录场景选择：运行 ui-use <场景> 记录所用设计 Skill');
+  for(const [k,v]of Object.entries(used)){if(!routeOf(k))problems.push('场景记录指向未知场景 '+k);else if(v.primaryAvailable===false&&!(v.secondary&&v.secondary!==routeOf(k).primary))problems.push('场景 '+k+' 的主 Skill 不可用但未记录替代 Skill');}
+ }
  for(const t of ['evidence.json','spec-sync.json','test-results.json'])if(!fs.existsSync(path.join(pkg,'templates',t)))problems.push('缺少模板 '+t);
  if(!fs.existsSync(stateFile))console.log('state: 未初始化（可 init 新变更）');
  else{
@@ -156,14 +190,34 @@ function doctor(){
  if(problems.length){console.log('PROBLEMS:');for(const p of problems)console.log('- '+p);process.exitCode=1;}else console.log('OK');
 }
 try{
- if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ui-routing | ui-use <场景> [实际所用Skill] | handoff | doctor | reopen <node> | migrate | archive
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
 证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
 证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
 断言：--expect <正则> 要求输出命中（可重复多次），--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。参数校验在命令执行前完成；固定证据路径记录最新结果，失败阻断推进；每次执行的证据与日志独立保留。
 需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 中已通过必测用例的 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后运行 migrate 迁移进行中的状态。
+UI 场景路由：ui 节点按项目场景选择设计 Skill（ui-routing 查看；ui-use <场景> 记录实际所用）。场景: ${UI_ROUTING?UI_ROUTING.scenarios.map(s=>s.id+'→'+s.primary).join(' / '):'未配置'}；兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}。
 Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: COMET_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
+ else if(cmd==='ui-routing'){
+  const r=uiRouting();
+  console.log('UI 场景路由（按项目场景选择设计 Skill，改动 protocol 即需 migrate）：');
+  for(const l of r.lines)console.log('  '+l);
+  console.log('  fallback: '+r.fallback+'（'+(skillAvailable(r.fallback)?'已安装':'未安装')+'）');
+  console.log(UI_ROUTING.fallbackNote||'');
+ }
+ else if(cmd==='ui-use'){
+  const s=state();
+  if(s.currentNode!=='ui')throw Error('只能在 ui 节点记录场景选择（当前 '+s.currentNode+'）');
+  const sc=routeOf(arg);
+  if(!sc)throw Error('未知场景 '+arg+'；可用: '+UI_ROUTING.scenarios.map(x=>x.id).join('/'));
+  const chosenDesc=value?.trim();
+  const primaryOk=skillAvailable(sc.primary);
+  (s.uiUsage=s.uiUsage||{})[arg]={secondary:chosenDesc||sc.primary,at:new Date().toISOString(),primaryAvailable:primaryOk};
+  save(s,'ui-use '+arg);print(s);
+  console.log('SCENARIO: '+arg+' | 主 Skill: '+sc.primary+(primaryOk?'（已安装）':'（未安装，改用 fallback '+UI_ROUTING.fallback+'）'));
+  if(!primaryOk)console.log('WARN: 主 Skill '+sc.primary+' 不可用，请改用 '+UI_ROUTING.fallback+'，并在 ui.md 说明实际所用 Skill');
+ }
  else if(cmd==='doctor'){doctor();}
  else if(cmd==='init'){
   if(!/^[a-z0-9][a-z0-9-]{0,79}$/.test(arg||''))throw Error('change-id 使用小写字母数字和连字符');

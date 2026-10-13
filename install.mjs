@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const MANIFEST = '.sy-comet-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
@@ -67,6 +67,20 @@ function* walk(dir) {
 const skills = fs.readdirSync(srcRoot, { withFileTypes: true })
   .filter((e) => e.isDirectory() && fs.existsSync(path.join(srcRoot, e.name, 'SKILL.md')))
   .map((e) => e.name);
+
+// UI 场景路由声明的可选依赖：本包不一定分发，缺失时只提示，不阻断安装。
+const routingPath = path.join(srcRoot, 'sy-comet', 'reference', 'workflow-protocol.json');
+let optionalSkills = [];
+try {
+  const routing = JSON.parse(fs.readFileSync(routingPath, 'utf8')).uiSkillRouting;
+  const bundled = new Set(skills);
+  const seen = new Set();
+  for (const sc of routing?.scenarios || []) {
+    for (const name of [sc.primary, ...(sc.supports || [])]) {
+      if (name && !bundled.has(name) && !seen.has(name)) { seen.add(name); optionalSkills.push({ name, scenario: sc.id, role: sc.primary === name ? '主' : '可选叠加' }); }
+    }
+  }
+} catch { /* 协议缺失时跳过提示 */ }
 
 // 新包全部文件：相对路径 → 源路径
 const pkgFiles = new Map();
@@ -161,6 +175,10 @@ if (conflicts.length) {
 if (kept.length) {
   console.log('kept（新包已删除但你本地改过，保留）:');
   for (const k of kept) console.log(`- ${k}`);
+}
+if (optionalSkills.length) {
+  console.log('UI 场景路由的可选依赖（本包不分发，缺失时对应场景回退到内置 frontend-design）:');
+  for (const s of optionalSkills) console.log(`- ${s.name}（场景 ${s.scenario} 的${s.role} Skill）`);
 }
 if (!apply) console.log('No files were written. 加 --apply 真实执行。');
 if (conflicts.length) process.exitCode = 1;

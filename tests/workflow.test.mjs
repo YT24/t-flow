@@ -17,7 +17,9 @@ function fixture(t) {
  const read=p=>JSON.parse(fs.readFileSync(path.join(root,p)));
  const setup=()=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?'REQ-01 behavior':'content');ok('approve','specify','confirmed');ok('advance');ok('skip','ui','no UI');ok('skip','design','small');doc('plan.md','plan');put('src/a.js','export const a=1;');doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);ok('advance');};
  const pass=()=>{ok('run','T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');ok('task','T-01','done','docs/sy-comet/current/evidence/T-01.json');};
- return {base,root,run,ok,put,doc,read,setup,pass};
+ // 走到 ui 节点（不 skip）
+ const atUi=()=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?'REQ-01 behavior':'content');ok('approve','specify','confirmed');ok('advance');};
+ return {base,root,run,ok,put,doc,read,setup,pass,atUi};
 }
 
 test('check validates artifacts before approval but advance still requires approval',t=>{const f=fixture(t);f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('check');assert.equal(f.run('advance').code,1);});
@@ -99,4 +101,47 @@ test('evidence log path must stay inside the workflow logs directory',t=>{
  ev.log='outside.log';
  f.put(ep,ev);
  const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据日志必须位于/);
+});
+
+// —— UI 场景路由 ——
+test('ui-routing lists scenarios and marks the bundled fallback available',t=>{
+ const f=fixture(t);const r=f.run('ui-routing');
+ assert.equal(r.code,0,r.out);
+ for(const id of ['admin','brand','marketing'])assert.match(r.out,new RegExp(id));
+ assert.match(r.out,/fallback: frontend-design（已安装）/);
+ assert.match(r.out,/sy-hifi-prototype（未安装）/);
+});
+test('ui-use records the scenario and warns when the primary skill is missing',t=>{
+ const f=fixture(t);f.atUi();
+ const a=f.run('ui-use','admin');assert.equal(a.code,0,a.out);
+ assert.match(a.out,/sy-hifi-prototype（未安装，改用 fallback frontend-design）/);
+ assert.match(a.out,/WARN/);
+ assert.equal(f.read('.comet/runs/sy-comet/state.json').uiUsage.admin.primaryAvailable,false);
+ const m=f.run('ui-use','marketing','frontend-design');assert.equal(m.code,0,m.out);
+ assert.match(m.out,/frontend-design（已安装）/);
+ assert.doesNotMatch(m.out,/WARN/);
+});
+test('ui-use rejects unknown scenario and is limited to the ui node',t=>{
+ const f=fixture(t);f.atUi();
+ const bad=f.run('ui-use','bogus');assert.equal(bad.code,1);assert.match(bad.out,/未知场景/);
+ const g=fixture(t);g.ok('init','test');
+ const wrong=g.run('ui-use','marketing');assert.equal(wrong.code,1);assert.match(wrong.out,/只能在 ui 节点/);
+});
+test('doctor flags ui.md without a recorded scenario once past ui',t=>{
+ const f=fixture(t);f.atUi();f.doc('ui.md','prototype');
+ f.ok('approve','ui','confirmed');f.ok('advance');
+ const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/未记录场景选择/);
+});
+test('doctor stays OK when ui is skipped or the scenario is recorded',t=>{
+ const skipped=fixture(t);skipped.setup();skipped.ok('doctor');
+ const rec=fixture(t);rec.atUi();rec.ok('ui-use','marketing','frontend-design');rec.doc('ui.md','prototype');rec.ok('approve','ui','confirmed');rec.ok('advance');rec.ok('doctor');
+});
+test('doctor flags a missing primary skill recorded without a substitute',t=>{
+ const f=fixture(t);f.atUi();f.ok('ui-use','admin');f.doc('ui.md','prototype');
+ const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/未记录替代 Skill/);
+});
+test('doctor does not demand a scenario when ui was explicitly skipped',t=>{
+ const f=fixture(t);f.atUi();f.doc('ui.md','stale artifact left behind');
+ f.ok('skip','ui','no UI');f.doc('design.md','design');
+ const r=f.run('doctor');assert.equal(r.code,0,r.out);assert.doesNotMatch(r.out,/未记录场景选择/);
 });
