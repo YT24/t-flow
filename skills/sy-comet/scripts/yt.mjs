@@ -42,17 +42,53 @@ function tasks(){const t=json(current+'/tasks.json');if(!Array.isArray(t)||!t.le
  // modules 必须是非空字符串数组：证据输入绑定依赖它，留空等于让"证据过期"失效（见 README 机制边界）。
  if(!Array.isArray(x.modules)||!x.modules.length||x.modules.some(m=>typeof m!=='string'||!m.trim()))throw Error('任务 '+x.id+' 的 modules 必须是非空路径数组（证据输入绑定依赖它）');
  if(x.dependsOn.some(d=>!ids.has(d)||d===x.id))throw Error('任务依赖非法 '+x.id);}const seen=new Set(),active=new Set();function visit(id){if(active.has(id))throw Error('任务依赖循环');if(seen.has(id))return;active.add(id);t.find(x=>x.id===id).dependsOn.forEach(visit);active.delete(id);seen.add(id);}t.forEach(x=>visit(x.id));return t;}
-function validateEvidence(e,s){
+// 读取某 id 的全部真实执行记录（attempts/<id>/<runId>.json），用于阶段隔离与留痕核对。
+function attemptsOf(id){
+ const dir=evDir+'/attempts/'+id;if(!fs.existsSync(safe(dir)))return [];
+ const out=[];
+ for(const f of fs.readdirSync(safe(dir))){if(!f.endsWith('.json'))continue;try{out.push(json(dir+'/'+f));}catch{}}
+ return out;
+}
+// 证据校验：既校验内容，也校验「这份内容确实来自它声称的那次执行」。
+// 仅比对固定路径自身会恒等成立（e 就是该路径读出的对象），因此必须交叉核对：
+//   1) 调用方传入的 evidencePath 中的 id      == 内容里的 e.id
+//   2) attempts/<id>/<runId>.json 存在          （真实执行留痕）
+//   3) 固定路径内容 == attempts 记录内容        （防止只改固定路径）
+function validateEvidence(e,s,{path:evPath}={}){
  if(e.schemaVersion!==2)throw Error('旧版验证证据需重新运行 run');
- if(!e.id||!e.runId||json(evDir+'/'+e.id+'.json').runId!==e.runId)throw Error('验证证据不是最新执行结果');
+ if(!e.id||!e.runId)throw Error('验证证据字段缺失或未通过');
+ // (1) 路径 id 必须与内容 id 一致：否则是把 A 的证据复制成 B 的文件名冒充 B。
+ if(evPath){
+  const m=/^docs\/sy-comet\/current\/evidence\/([^/]+)\.json$/.exec(evPath.split(path.sep).join('/'));
+  if(!m)throw Error('证据路径必须是 '+evDir+'/<id>.json');
+  if(m[1]!==e.id)throw Error('证据文件与内容 id 不一致（路径 '+m[1]+'，内容 '+e.id+'）：请重新运行 run '+m[1]);
+ }
+ // (2)(3) 必须有对应的 attempts 记录，且内容与固定路径一致。
+ const ap=evDir+'/attempts/'+e.id+'/'+e.runId+'.json';
+ if(!fs.existsSync(safe(ap)))throw Error('缺少该证据的执行记录 '+ap+'：证据须由 run '+e.id+' 真实生成，不能复制或手写');
+ let stored;try{stored=json(ap);}catch(err){throw Error('执行记录损坏 '+ap+': '+err.message);}
+ if(stored.runId!==e.runId||stored.id!==e.id)throw Error('执行记录与证据不匹配: '+ap);
+ if(json(evDir+'/'+e.id+'.json').runId!==e.runId)throw Error('验证证据不是最新执行结果');
  if(e.changeId!==s.changeId||e.status!=='passed'||!e.command||!e.recordedAt||!e.inputs||!Object.keys(e.inputs).length)throw Error('验证证据字段缺失或未通过');
  for(const [p,entries]of Object.entries(e.directories||{})){
   if(JSON.stringify(expandInput(p).map(([rel])=>rel).sort())!==JSON.stringify(entries))throw Error('验证证据目录已变化: '+p);
  }
  for(const [p,h]of Object.entries(e.inputs)){if(sha(fs.readFileSync(safe(p)))!==h)throw Error('验证证据过期: '+p);}
- if(!e.log||!read(e.log).trim())throw Error('缺少验证日志');
+ if(!e.log||!e.log.split(path.sep).join('/').startsWith(logsDir+'/'))throw Error('证据日志必须位于 '+logsDir+'/ 下');
+ if(!read(e.log).trim())throw Error('缺少验证日志');
 }
-function testResult(s){const r=json(current+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed')validateEvidence(json(t.evidence),s);}if(!r.tests.some(t=>t.required))throw Error('没有定义必测项');coverage(r);return r;}
+function testResult(s){const r=json(current+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed'){
+  // verify 用例必须由 verify 阶段自己执行：不得复用 execute 阶段的任务证据，
+  // 否则"测试"可能从未作为测试运行过（历史缺陷）。
+  // 判据是「被引用证据所属 id 的执行阶段」，且只看该 runId 那次执行，避免同一 id
+  // 在两个阶段都被合法使用时误伤。
+  const m=/^docs\/sy-comet\/current\/evidence\/([^/]+)\.json$/.exec(String(t.evidence).split(path.sep).join('/'));
+  if(m&&m[1]!==String(t.id))throw Error('用例 '+t.id+' 引用了 '+m[1]+' 的证据：请用 run '+t.id+' 执行该用例本身');
+  const cur=m?json(evDir+'/'+m[1]+'.json'):null;
+  const rec=(m&&cur)?attemptsOf(m[1]).find(r=>r.runId===cur.runId):null;
+  if(rec&&rec.node&&rec.node!=='verify')throw Error('用例 '+t.id+' 复用了 '+rec.node+' 阶段的证据（'+m[1]+'）：请在 verify 阶段用 run '+t.id+' 执行该用例本身');
+  validateEvidence(json(t.evidence),s,{path:t.evidence});
+ }}if(!r.tests.some(t=>t.required))throw Error('没有定义必测项');coverage(r);return r;}
 // 需求覆盖：每个需求至少有一个通过的必测用例。
 function coverage(r){
  if(!REQ_COVERAGE)return;
@@ -68,7 +104,7 @@ function syncResult(s){const p=current+'/spec-sync.json';if(!fs.existsSync(safe(
 function validate(s,id,{approval=true}={}){
  const n=node(id);for(const p of files(n)){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;if(!read(p).trim())throw Error('产物为空 '+p);}
  if(id==='plan')tasks();
- if(id==='execute'){for(const t of tasks()){if(t.status!=='done'||!t.evidence)throw Error('任务未完成 '+t.id);validateEvidence(json(t.evidence),s);}}
+ if(id==='execute'){for(const t of tasks()){if(t.status!=='done'||!t.evidence)throw Error('任务未完成 '+t.id);validateEvidence(json(t.evidence),s,{path:t.evidence});}}
  if(id==='verify'){validate(s,'execute',{approval:false});testResult(s);}
  if(id==='archive'){validate(s,'execute',{approval:false});testResult(s);syncResult(s);}
  if(approval&&APPROVAL_NODES.includes(id)&&s.approvals[id]?.fingerprint!==fingerprint(s,id))throw Error('需要用户确认或确认已失效: '+id);
@@ -122,7 +158,8 @@ function doctor(){
 try{
  if(cmd==='help'){console.log(`yt.mjs init <change-id> | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | handoff | doctor | reopen <node> | migrate | archive
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
-证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
+证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
+证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
 断言：--expect <正则> 要求输出命中（可重复多次），--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。参数校验在命令执行前完成；固定证据路径记录最新结果，失败阻断推进；每次执行的证据与日志独立保留。
 需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 中已通过必测用例的 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后运行 migrate 迁移进行中的状态。
@@ -213,7 +250,9 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     const inputs=boundInputs(s,extraInputs),inputRoots=[...extraInputs];
     if(s.currentNode==='execute'){
      const ts=json(current+'/tasks.json'),t=Array.isArray(ts)?ts.find(x=>x.id===arg):null;
-     if(t){
+     // execute 阶段证据 id 必须是已声明的任务：否则会生成无法登记、只污染证据目录的孤儿证据。
+     if(!t)throw Error('execute 阶段的证据 id 必须是 tasks.json 中的任务 id：未找到任务 '+arg);
+     {
       const bad=(t.modules||[]).filter(m=>{try{return !fs.existsSync(safe(m));}catch{return true;}});
       if(bad.length)throw Error('任务 '+arg+' 的 modules 路径不存在或非法: '+bad.join(', ')+'（modules 须为项目内真实相对路径，证据输入绑定依赖它）');
       Object.assign(inputs,boundInputs(s,t.modules));inputRoots.push(...t.modules);
@@ -234,7 +273,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     writeRaw(log,['$ '+command,'',r.stdout||'',r.stderr||'',r.error?'[error] '+r.error.message:'','[exit] '+(r.status===null?'signal '+(r.signal||'?'):r.status),
      expects.length?'[expect] '+expects.map(p=>p+' -> '+(unmet.includes(p)?'MISS':'HIT')).join('; '):'',
      minOutput?'[min-output] '+minOutput+' (actual '+bodyLen+')':''].filter(Boolean).join('\n'));
-    const ev={schemaVersion:2,id:arg,runId,directories,changeId:s.changeId,status:ok?'passed':'failed',command,recordedAt:new Date().toISOString(),inputs,log,
+    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,recordedAt:new Date().toISOString(),inputs,log,
      ...(expects.length?{expects}:{}),...(minOutput?{minOutput}:{})};
     const ep=evDir+'/'+arg+'.json';
     // 每次执行保存独立记录；固定路径始终指向最新结果，包括失败。
@@ -246,7 +285,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(s.currentNode!=='execute')throw Error('只有执行阶段可更新任务');
     const ts=tasks(),t=ts.find(x=>x.id===arg);if(!t||!['pending','in_progress','blocked','done'].includes(value))throw Error('任务或状态非法');
     if(['in_progress','done'].includes(value)&&t.dependsOn.some(d=>ts.find(x=>x.id===d).status!=='done'))throw Error('任务依赖未完成');
-    if(value==='done'){const expect=current+'/evidence/'+arg+'.json';if(extra[0]!==expect)throw Error('证据须为 '+expect+'（先用 run '+arg+' 生成）');validateEvidence(json(extra[0]),s);t.evidence=extra[0];}else delete t.evidence;
+    if(value==='done'){const expect=current+'/evidence/'+arg+'.json';if(extra[0]!==expect)throw Error('证据须为 '+expect+'（先用 run '+arg+' 生成）');validateEvidence(json(extra[0]),s,{path:extra[0]});t.evidence=extra[0];}else delete t.evidence;
     if(t.status==='done'&&value!=='done'&&ts.some(x=>x.dependsOn.includes(t.id)&&x.status==='done'))throw Error('先重开依赖本任务的已完成任务');
     t.status=value;write(current+'/tasks.json',ts);save(s,'task '+arg+'='+value);print(s);
    }else if(['check','advance','archive'].includes(cmd)){

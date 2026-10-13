@@ -36,7 +36,67 @@ test('historical success cannot bypass latest failed attempt',t=>{
  assert.equal(f.run('run','REQ-01','--input','src','--',process.execPath,'-e','process.exit(1)').code,1);
  f.doc('test-report.md','report');
  f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:`docs/sy-comet/current/evidence/attempts/REQ-01/${old.runId}.json`}]});
- const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/不是最新执行结果/);
+ const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据路径必须是|不是最新执行结果/);
 });
 test('legacy evidence requires rerun rather than silent upgrade',t=>{const f=fixture(t);f.setup();f.pass();const ep='docs/sy-comet/current/evidence/T-01.json',old=f.read(ep);delete old.schemaVersion;f.put(ep,old);const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/旧版验证证据/);f.pass();f.ok('check');});
 test('unchanged binary directory inputs remain valid',t=>{const f=fixture(t);f.setup();fs.writeFileSync(path.join(f.root,'src/asset.bin'),Buffer.from([255,254,0,128]));f.pass();f.ok('check');});
+
+// —— 证据伪造 / 复用向量 ——
+test('copied evidence file cannot impersonate another case id',t=>{
+ const f=fixture(t);f.setup();f.pass();f.ok('advance');
+ f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ fs.copyFileSync(path.join(f.root,'docs/sy-comet/current/evidence/REQ-01.json'),path.join(f.root,'docs/sy-comet/current/evidence/REQ-02.json'));
+ f.doc('test-report.md','report');
+ f.doc('test-results.json',{changeId:'test',tests:[
+  {id:'REQ-01',required:true,status:'passed',evidence:'docs/sy-comet/current/evidence/REQ-01.json'},
+  {id:'REQ-02',required:true,status:'passed',evidence:'docs/sy-comet/current/evidence/REQ-02.json'}]});
+ const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据文件与内容 id 不一致/);
+});
+test('copied evidence with rewritten id still requires a real attempt record',t=>{
+ const f=fixture(t);f.setup();f.pass();f.ok('advance');
+ f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ const copied=f.read('docs/sy-comet/current/evidence/REQ-01.json');copied.id='REQ-02';
+ f.put('docs/sy-comet/current/evidence/REQ-02.json',copied);
+ f.doc('test-report.md','report');
+ f.doc('test-results.json',{changeId:'test',tests:[
+  {id:'REQ-01',required:true,status:'passed',evidence:'docs/sy-comet/current/evidence/REQ-01.json'},
+  {id:'REQ-02',required:true,status:'passed',evidence:'docs/sy-comet/current/evidence/REQ-02.json'}]});
+ const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/缺少该证据的执行记录/);
+});
+test('verify case cannot reuse execute task evidence',t=>{
+ const f=fixture(t);f.setup();f.pass();f.ok('advance');
+ f.doc('test-report.md','report');
+ f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/sy-comet/current/evidence/T-01.json'}]});
+ const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/引用了 T-01 的证据/);
+});
+test('execute run rejects an id that is not a declared task',t=>{
+ const f=fixture(t);f.setup();
+ const ghost=f.run('run','GHOST','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ assert.equal(ghost.code,1);assert.match(ghost.out,/必须是 tasks.json 中的任务 id/);
+ assert.equal(fs.existsSync(path.join(f.root,'docs/sy-comet/current/evidence/GHOST.json')),false);
+});
+test('same id reused across execute and verify is allowed once verify reruns it',t=>{
+ const f=fixture(t);
+ f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('approve','clarify','confirmed');f.ok('advance');
+ for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
+ f.ok('approve','specify','confirmed');f.ok('advance');f.ok('skip','ui','no UI');f.ok('skip','design','small');
+ f.doc('plan.md','plan');f.put('src/a.js','export const a=1;');
+ f.doc('tasks.json',[{id:'REQ-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);
+ f.ok('advance');
+ f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.ok('task','REQ-01','done','docs/sy-comet/current/evidence/REQ-01.json');
+ f.ok('advance');
+ f.doc('test-report.md','report');
+ f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/sy-comet/current/evidence/REQ-01.json'}]});
+ assert.equal(f.run('check').code,1,'execute-phase evidence must not satisfy the verify case');
+ f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.ok('check','verify rerun of the same id must be accepted');
+});
+test('evidence log path must stay inside the workflow logs directory',t=>{
+ const f=fixture(t);f.setup();f.pass();
+ const ep='docs/sy-comet/current/evidence/T-01.json',ev=f.read(ep);
+ f.put('outside.log','forged');
+ ev.log='outside.log';
+ f.put(ep,ev);
+ const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据日志必须位于/);
+});

@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.4.1';
+const VERSION = '1.5.0';
 const MANIFEST = '.sy-comet-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
