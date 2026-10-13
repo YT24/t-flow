@@ -256,6 +256,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
   const r=uiRouting();
   console.log('UI 设计 Skill（改动 protocol 即需 migrate）：');
   for(const l of r.lines)console.log('  '+l);
+  if(UI_ROUTING.source)console.log('  来源: '+UI_ROUTING.source+(UI_ROUTING.license?'（'+UI_ROUTING.license+'）':''));
   console.log('  '+(UI_ROUTING.primaryNote||''));
   console.log('  '+(UI_ROUTING.fallbackNote||''));
   if(UI_ROUTING.fiveStatesRequired)console.log('  '+(UI_ROUTING.fiveStatesNote||''));

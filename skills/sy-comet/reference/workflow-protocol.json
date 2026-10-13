@@ -15,113 +15,199 @@
     "comment": "UI 节点使用的设计 Skill。二者都随本包分发（skills/ 下），本地缺失时由 install/ensure-skills 自动补齐到项目 .agents/skills/ 并链接到 .claude/skills/。primary 为主 Skill，fallback 仅在其不可用时兜底。",
     "primary": "ui-ux-pro-max",
     "fallback": "frontend-design",
-    "distribution": ["ui-ux-pro-max", "frontend-design"],
-    "primaryNote": "ui-ux-pro-max 覆盖 50+ 风格、161 配色、57 字体配对、10 个技术栈与 99 条 UX 准则，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），适用于后台、C 端、移动端全部含界面场景。",
+    "distribution": [
+      "ui-ux-pro-max",
+      "frontend-design"
+    ],
+    "primaryNote": "ui-ux-pro-max 覆盖 79 风格/50 启用、192 产品配色与推理、74 字体配对、119 条 UX 准则、105 图标、17 GSAP 预设、25 图表类型、22 技术栈，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），适用于后台、C 端、移动端与桌面端全部含界面场景。检索脚本 scripts/search.py 需 Python 3，无外部依赖。",
     "fallbackNote": "frontend-design（Anthropic 官方，Apache-2.0）为纯审美指导，不覆盖五态与角色权限；仅在 ui-ux-pro-max 不可用时兜底，此时须自行补齐五态并在 ui.md 说明。",
     "fiveStatesRequired": true,
-    "fiveStatesNote": "无论用哪个 Skill，空/加载/错误/无权限/正常五态与浏览器实测结论都必须写入 ui.md——这是本节点的硬要求，不因所选 Skill 而豁免。"
+    "fiveStatesNote": "无论用哪个 Skill，空/加载/错误/无权限/正常五态与浏览器实测结论都必须写入 ui.md——这是本节点的硬要求，不因所选 Skill 而豁免。",
+    "source": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+    "license": "MIT"
   },
   "nodes": [
     {
       "id": "clarify",
       "label": "需求澄清：澄清范围、关键业务决定和验收条件，产物为澄清纪要",
       "approval": true,
-      "outputSchemas": ["yt.clarify.v1"]
+      "outputSchemas": [
+        "yt.clarify.v1"
+      ]
     },
     {
       "id": "specify",
       "label": "整理 PRD 与 ADR",
       "approval": true,
-      "outputSchemas": ["yt.specify.v1"]
+      "outputSchemas": [
+        "yt.specify.v1"
+      ]
     },
     {
       "id": "ui",
       "label": "UI 设计；无界面需求时 skip",
       "skippable": true,
       "approval": true,
-      "outputSchemas": ["yt.ui.v1"]
+      "outputSchemas": [
+        "yt.ui.v1"
+      ]
     },
     {
       "id": "design",
       "label": "详细设计；小型变更（无架构调整/数据迁移/新接口）可 skip",
       "skippable": true,
       "approval": true,
-      "outputSchemas": ["yt.design.v1"]
+      "outputSchemas": [
+        "yt.design.v1"
+      ]
     },
     {
       "id": "plan",
       "label": "可续跑执行计划",
-      "outputSchemas": ["yt.plan.v1"]
+      "outputSchemas": [
+        "yt.plan.v1"
+      ]
     },
     {
       "id": "execute",
       "label": "逐任务执行",
-      "outputSchemas": ["yt.execute.v1"]
+      "outputSchemas": [
+        "yt.execute.v1"
+      ]
     },
     {
       "id": "verify",
       "label": "测试并输出报告",
-      "outputSchemas": ["yt.verify.v1"]
+      "outputSchemas": [
+        "yt.verify.v1"
+      ]
     },
     {
       "id": "archive",
       "label": "验收与 Spec 归档",
       "approval": true,
-      "outputSchemas": ["yt.archive.v1"]
+      "outputSchemas": [
+        "yt.archive.v1"
+      ]
     }
   ],
   "outputSchemas": [
     {
       "id": "yt.clarify.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/clarify-log.md"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/clarify-log.md"
+          ]
+        }
       ]
     },
     {
       "id": "yt.specify.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/prd.md"] },
-        { "required": true, "paths": ["docs/sy-comet/current/adr.md"] },
-        { "required": true, "paths": ["docs/sy-comet/current/spec-delta.md"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/prd.md"
+          ]
+        },
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/adr.md"
+          ]
+        },
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/spec-delta.md"
+          ]
+        }
       ]
     },
     {
       "id": "yt.ui.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/ui.md"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/ui.md"
+          ]
+        }
       ]
     },
     {
       "id": "yt.design.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/design.md"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/design.md"
+          ]
+        }
       ]
     },
     {
       "id": "yt.plan.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/plan.md"] },
-        { "required": true, "paths": ["docs/sy-comet/current/tasks.json"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/plan.md"
+          ]
+        },
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/tasks.json"
+          ]
+        }
       ]
     },
     {
       "id": "yt.execute.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/plan.md"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/plan.md"
+          ]
+        }
       ]
     },
     {
       "id": "yt.verify.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/test-report.md"] },
-        { "required": true, "paths": ["docs/sy-comet/current/test-results.json"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/test-report.md"
+          ]
+        },
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/test-results.json"
+          ]
+        }
       ]
     },
     {
       "id": "yt.archive.v1",
       "artifacts": [
-        { "required": true, "paths": ["docs/sy-comet/current/archive-report.md"] },
-        { "required": true, "paths": ["docs/sy-comet/current/spec-sync.json"] }
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/archive-report.md"
+          ]
+        },
+        {
+          "required": true,
+          "paths": [
+            "docs/sy-comet/current/spec-sync.json"
+          ]
+        }
       ]
     }
   ],

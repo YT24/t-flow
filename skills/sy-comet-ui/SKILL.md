@@ -21,7 +21,15 @@ description: 仅由 sy-comet 入口路由到本阶段时使用。
 
 不带参数时 `ui-use` 默认记录主 Skill。以兜底完成会打印 WARN，须在 ui.md 写明原因。
 
-**第二步 · 生成原型。** 加载所选 Skill，复用已确认角色/权限/流程；`ui-ux-pro-max` 的 Python 检索脚本（`scripts/search.py`）可按产品类型/行业检索风格与配色，需要时用 `python3` 调用。不要自动新增全套 CRUD；只实现本次 PRD 范围。
+**第二步 · 生成原型。** 加载所选 Skill，复用已确认角色/权限/流程。`ui-ux-pro-max` 自带可检索的本地数据库，按**单一主导意图**查询（需 Python 3，无外部依赖）：
+
+```sh
+python3 <skill目录>/scripts/search.py "dashboard analytics" --design-system      # 新页面/系统级视觉方向
+python3 <skill目录>/scripts/search.py "error summary validation" --domain ux     # 定向问题（无障碍/表单/排版等）
+python3 <skill目录>/scripts/search.py "chip badge overflow nowrap" --stack html-tailwind
+```
+
+它的 SKILL.md 有完整的 Query Contract：查询用 2–5 个有意义词、先查语义化 UX 结果再查技术栈实现，**结果为空或跑题时改写重试一次**，仍失败就如实说明未找到而非套用泛化建议。需要更细的规则时读它的 `references/quick-reference.md`（119 条 UX 准则）与 `references/pro-rules.md`（交付前自检清单）。不要自动新增全套 CRUD；只实现本次 PRD 范围。
 
 **第三步 · 写 ui.md**（可复制 `templates/ui.md`），至少包含：原型路径、所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**——这正是把它写进 ui.md 的原因：主 Skill 覆盖面广，兜底 Skill 不覆盖，靠记录来暴露差距。
 
