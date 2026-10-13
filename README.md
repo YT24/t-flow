@@ -8,7 +8,7 @@ clarify → specify → ui → design → plan → execute → verify → archiv
 ```
 
 - 需求澄清由 `grill-me`（grilling）车轮式追问完成；UI 阶段按**场景路由**选择设计 Skill（见下），不再硬编码单一依赖
-- UI 设计 Skill：主 `ui-ux-pro-max`（79 风格 / 50 启用、192 产品配色与推理、74 字体配对、119 条 UX 准则、105 图标、17 GSAP 预设、25 图表类型、22 技术栈，含对比度 4.5:1 / 44×44 触控目标 / 键盘导航等无障碍硬指标），兜底 `frontend-design`（Anthropic 官方，纯审美指导，不覆盖五态与角色权限）。二者随包分发；`yt.mjs ensure-skills` 自动安装到项目 `.agents/skills/` 并在 `.claude/skills/` 建同名符号链接（Claude 与 agent 两条发现路径都可命中），已存在则不重复复制。`ui-routing` 查看可用性，`ui-use [Skill名]` 记录本次所用；以兜底完成会告警并在 ui.md 留痕
+- UI 设计 Skill：主 `ui-ux-pro-max`（79 风格 / 50 启用、192 产品配色与推理、74 字体配对、119 条 UX 准则、105 图标、17 GSAP 预设、25 图表类型、22 技术栈，含对比度 4.5:1 / 44×44 触控目标 / 键盘导航等无障碍硬指标），兜底 `frontend-design`（Anthropic 官方，纯审美指导，不覆盖五态与角色权限）。二者随包分发，`yt.mjs ensure-skills` 会把缺失的补到项目 `.agents/skills/`，已存在则不重复复制。`ui-routing` 查看可用性，`ui-use [Skill名]` 记录本次所用；以兜底完成会告警并在 ui.md 留痕
 - **存量项目 UI 变更**：`ui.md` 须含 `ui-scope` 声明块（`mode: new|change`、`files`、`affected`），把「用户确认的界面」与真实文件绑定——`check` 校验路径真实存在与 `change` 必填 `affected`，`run` 把 `files` 与 `affected` 强制计入证据输入，改动已声明的界面文件会使证据过期，杜绝"确认的是 A、交付的是 B"。涉及样式/主题改动时须把样式文件列入声明，否则 `run` 会告警（视觉改动不在证据输入里就不会触发过期检查）
 - 五个用户确认门禁：需求澄清 / PRD 与增量 Spec / UI 原型 / 技术设计 / 交付验收（确认绑定产物指纹，产物一变确认自动失效）；门禁由 `workflow-protocol.json` 各节点的 `approval` 声明，改动即变更 protocolHash 需 migrate
 - 无界面需求可 `skip ui`，小型变更（无架构调整、无数据迁移、无新接口）可 `skip design`，skip 原因均落盘；skip 由 agent 自行判定并记录，不是用户确认的替代品，评审时应复核原因
@@ -60,8 +60,21 @@ node install.mjs --project /path/to/your-project --update --apply --force
 node .agents/skills/t-flow/scripts/yt.mjs status   # 查看状态/断点
 node .agents/skills/t-flow/scripts/yt.mjs help     # 全部命令
 node .agents/skills/t-flow/scripts/yt.mjs doctor   # 自检
-node .agents/skills/t-flow/scripts/yt.mjs ensure-skills  # 补齐 UI 设计 Skill（装到项目 + 链接 .claude/skills）
+node .agents/skills/t-flow/scripts/yt.mjs ensure-skills  # 补齐缺失的 UI 设计 Skill（装到项目 .agents/skills）
 ```
+
+## Skill 装在哪里：`.agents/skills` 与 `.claude/skills`
+
+两套目录各有用途，**实体只装一份，靠符号链接让两条发现路径都命中**：
+
+| 目录 | 谁从这里发现 | 内容 |
+|---|---|---|
+| `.agents/skills/`（`--global` 时为 `~/.agents/skills/`） | agent / 通用 Skill 规范 | **实体**，`install.mjs` 的唯一写入目标 |
+| `.claude/skills/`（`--global` 时为 `~/.claude/skills/`） | Claude Code | **符号链接** → 指向 `.agents/skills/<name>` |
+
+`install.mjs --apply` 装完实体后，会为**每个** Skill 在 `.claude/skills/` 建符号链接（`--no-link-claude` 可关闭）。此前只有 UI 设计 Skill 会被链接，导致 `t-flow` 入口与 8 个节点 Skill 在 Claude Code 下不可见——现已修复，`doctor` 也会检查本工作流 Skill 的 `.claude` 入口是否缺失。
+
+**装到哪由参数决定，不存在自动判断**：`--project <dir>` → `<dir>/.agents/skills`，`--global` → `~/.agents/skills`。
 
 ## Git 管理建议
 

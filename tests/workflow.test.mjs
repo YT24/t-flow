@@ -260,3 +260,56 @@ test('adding a new page is detected through the ui-scope directory binding',t=>{
  f.put('src/pages/NewPage.vue','export default {};');
  const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/验证证据目录已变化: src\/pages/);
 });
+
+// —— Claude 入口（.claude/skills）——
+// Claude Code 只从 .claude/skills 发现 Skill，实体在 .agents/skills；安装器须为每个 Skill 建链接。
+function installerFixture(t){
+ const base=fs.mkdtempSync(path.join(os.tmpdir(),'t-flow-inst-'));
+ t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+ fs.cpSync(new URL('../skills',import.meta.url),path.join(base,'skills'),{recursive:true});
+ fs.copyFileSync(new URL('../install.mjs',import.meta.url),path.join(base,'install.mjs'));
+ const proj=path.join(base,'p');fs.mkdirSync(proj);
+ const install=(...extra)=>spawnSync(process.execPath,[path.join(base,'install.mjs'),'--project',proj,...extra],{encoding:'utf8'});
+ return {base,proj,install};
+}
+test('install links every bundled skill into .claude/skills',t=>{
+ const {proj,install}=installerFixture(t);
+ const r=install('--apply');assert.equal(r.status,0,r.stdout+r.stderr);
+ const agentDir=path.join(proj,'.agents','skills'), claudeDir=path.join(proj,'.claude','skills');
+ const names=fs.readdirSync(agentDir).filter(n=>fs.existsSync(path.join(agentDir,n,'SKILL.md')));
+ assert.ok(names.length>0,'应至少装一个 Skill');
+ for(const n of names){
+  const link=path.join(claudeDir,n);
+  assert.ok(fs.existsSync(link),n+' 应有 .claude 入口（否则 Claude 看不到）');
+  assert.ok(fs.lstatSync(link).isSymbolicLink(),n+' 的 .claude 条目应是符号链接');
+ }
+ // t-flow 入口与节点 Skill 都必须在其中
+ for(const n of ['t-flow','t-flow-clarify','t-flow-verify'])assert.ok(fs.existsSync(path.join(claudeDir,n)),n+' 应有 .claude 入口');
+});
+test('--no-link-claude skips creating .claude entries',t=>{
+ const {proj,install}=installerFixture(t);
+ const r=install('--apply','--no-link-claude');assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(fs.existsSync(path.join(proj,'.claude')),false,'--no-link-claude 不应创建 .claude');
+});
+test('re-running install is idempotent for the claude links',t=>{
+ const {proj,install}=installerFixture(t);
+ install('--apply');install('--apply');
+ const claudeDir=path.join(proj,'.claude','skills');
+ const agentDir=path.join(proj,'.agents','skills');
+ const names=fs.readdirSync(agentDir).filter(n=>fs.existsSync(path.join(agentDir,n,'SKILL.md')));
+ for(const n of names)assert.ok(fs.lstatSync(path.join(claudeDir,n)).isSymbolicLink(),n+' 应仍是符号链接');
+});
+test('doctor reports a t-flow skill missing its .claude entry',t=>{
+ const f=fixture(t);f.ok('ensure-skills');
+ // 造出「.agents 有 t-flow 实体、.claude 无入口」
+ const agentDir=path.join(f.root,'.agents','skills','t-flow-verify');
+ fs.mkdirSync(agentDir,{recursive:true});fs.writeFileSync(path.join(agentDir,'SKILL.md'),'x');
+ const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/Claude 入口缺失: .*t-flow-verify/);
+});
+test('doctor ignores unrelated third-party skills lacking a .claude entry',t=>{
+ const f=fixture(t);
+ // 与本工作流无关的 Skill 缺少 .claude 入口时不应报错（doctor 只管自己的 Skill）
+ const other=path.join(f.root,'.agents','skills','some-other-skill');
+ fs.mkdirSync(other,{recursive:true});fs.writeFileSync(path.join(other,'SKILL.md'),'x');
+ const r=f.run('doctor');assert.doesNotMatch(r.out,/some-other-skill/);
+});

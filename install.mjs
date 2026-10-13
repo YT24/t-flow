@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const MANIFEST = '.t-flow-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
@@ -27,10 +27,12 @@ const has = (f) => args.includes(f);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
 
 if (has('--help') || has('-h')) {
-  console.log(`node install.mjs --project <dir> [--apply] [--force]
-node install.mjs --global [--apply] [--force]
+  console.log(`node install.mjs --project <dir> [--apply] [--force] [--no-link-claude]
+node install.mjs --global [--apply] [--force] [--no-link-claude]
 node install.mjs --project <dir> --update [--apply] [--force]
-默认 preview 不写文件；--apply 真实写入；--update 按安装清单区分旧版本与本地修改；--force 覆盖冲突。`);
+默认 preview 不写文件；--apply 真实写入；--update 按安装清单区分旧版本与本地修改；--force 覆盖冲突。
+安装后默认在 .claude/skills/（或 ~/.claude/skills/）为每个 Skill 建符号链接，使 Claude Code 与
+agent 两条发现路径都能命中；--no-link-claude 可关闭。`);
   process.exit(0);
 }
 
@@ -47,6 +49,7 @@ if (!targetRoot) {
 const apply = has('--apply');
 const force = has('--force');
 const update = has('--update');
+const noLink = has('--no-link-claude');
 
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 function* walk(dir) {
@@ -162,9 +165,34 @@ if (apply) {
   fs.writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2) + '\n');
 }
 
+// Claude Code 从 .claude/skills/ 发现 Skill，agent 从 .agents/skills/ 发现；
+// 实体只装一份在 .agents/，在 .claude/ 建符号链接使两条路径都能命中。
+// 此前只有 UI 设计 Skill 会被链接，导致 t-flow 入口与各节点 Skill 在 Claude 下不可见。
+// targetRoot 形如 <base>/.agents/skills，故同级目录是 <base>/.claude/skills。
+const claudeRoot = path.join(path.dirname(path.dirname(targetRoot)), '.claude', 'skills');
+let linked = 0, linkSkipped = 0;
+if (apply && !noLink) {
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  for (const name of skills) {
+    const src = path.join(targetRoot, name);
+    const dst = path.join(claudeRoot, name);
+    try {
+      if (!fs.existsSync(path.join(src, 'SKILL.md'))) continue;
+      // dst 不存在时 lstatSync 会抛错，必须先用 existsSync/lstat 判存，不能靠 catch 兜底。
+      let dstExists = false;
+      try { dstExists = fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink(); } catch { dstExists = false; }
+      if (dstExists) { linkSkipped++; continue; }
+      fs.symlinkSync(path.relative(claudeRoot, src), dst);
+      linked++;
+    } catch { linkSkipped++; }
+  }
+}
+
 console.log(`${update ? 'Update' : 'Install'} ${apply ? '' : 'preview '}→ ${targetRoot} (v${VERSION})`);
 console.log(`skills: ${skills.join(', ')}`);
 console.log(`${written} file(s) ${apply ? 'written' : 'would be written'}, ${skipped} identical skipped${update ? `, ${pruned} stale pruned` : ''}.`);
+if (apply && !noLink) console.log(`Claude 入口: ${linked} 个符号链接建于 ${claudeRoot}${linkSkipped ? `，${linkSkipped} 个已存在（跳过）` : ''}。`);
+if (!apply) console.log(`（预览）将在 ${claudeRoot} 为每个 Skill 建符号链接；用 --no-link-claude 关闭。`);
 if (conflicts.length) {
   console.log(`conflicts（${update ? '本地已修改，未覆盖' : '内容不一致，未覆盖'}；加 --force 覆盖）:`);
   for (const c of conflicts) console.log(`- ${c}`);

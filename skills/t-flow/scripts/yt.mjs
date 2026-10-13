@@ -278,6 +278,24 @@ function doctor(){
    problems.push('主 Skill 不可用时未记录实际所用 Skill');
  }
  for(const t of ['evidence.json','spec-sync.json','test-results.json'])if(!fs.existsSync(path.join(pkg,'templates',t)))problems.push('缺少模板 '+t);
+ // Claude 入口完整性：本工作流的 Skill 实体装在 .agents/skills，但 Claude Code 只从
+ // .claude/skills 发现——缺入口则该 Skill 在 Claude 下不可见。只检查本包自己的 Skill
+ // （t-flow、t-flow-<node>、以及分发范围内的 UI 设计 Skill），不干涉用户目录里的其它 Skill。
+ {
+  const own=new Set(['t-flow',...nodes.map(n=>'t-flow-'+n.id),...(UI_ROUTING?.distribution||[])]);
+  const pairs=[[path.join(root,'.agents','skills'),path.join(root,'.claude','skills')]];
+  for(const [agentRoot,claudeRoot] of pairs){
+   if(!fs.existsSync(agentRoot))continue;
+   for(const name of fs.readdirSync(agentRoot)){
+    if(!own.has(name))continue;
+    try{
+     if(!fs.existsSync(path.join(agentRoot,name,'SKILL.md')))continue;
+     if(fs.existsSync(path.join(claudeRoot,name)))continue;
+     problems.push('Claude 入口缺失: '+path.join(claudeRoot,name)+'（实体在 '+path.join(agentRoot,name)+'）——重跑 install.mjs --apply，或手工建符号链接');
+    }catch{/* 读取失败跳过 */ }
+   }
+  }
+ }
  if(!fs.existsSync(stateFile))console.log('state: 未初始化（可 init 新变更）');
  else{
   let s=null;try{s=JSON.parse(fs.readFileSync(stateFile));}catch(e){problems.push('state.json 损坏: '+e.message+'；人工修复 JSON 或删除后重开');}
