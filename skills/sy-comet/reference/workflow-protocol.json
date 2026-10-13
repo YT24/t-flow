@@ -14,7 +14,7 @@
   "nodes": [
     {
       "id": "clarify",
-      "label": "需求澄清：车轮式追问直到无隐含假设，产物为澄清纪要",
+      "label": "需求澄清：澄清范围、关键业务决定和验收条件，产物为澄清纪要",
       "approval": true,
       "outputSchemas": ["yt.clarify.v1"]
     },
