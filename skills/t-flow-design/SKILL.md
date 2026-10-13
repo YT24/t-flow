@@ -1,9 +1,9 @@
 ---
-name: sy-comet-design
-description: 仅由 sy-comet 入口路由到本阶段时使用。
+name: t-flow-design
+description: 仅由 t-flow 入口路由到本阶段时使用。
 ---
 
-# sy-comet-design
+# t-flow-design
 
 ### Prerequisites
 运行 yt.mjs status 确认当前节点为 design，读取已完成产物及目标项目约束。

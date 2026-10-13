@@ -1,9 +1,9 @@
 ---
-name: sy-comet-plan
-description: 仅由 sy-comet 入口路由到本阶段时使用。
+name: t-flow-plan
+description: 仅由 t-flow 入口路由到本阶段时使用。
 ---
 
-# sy-comet-plan
+# t-flow-plan
 
 ### Prerequisites
 运行 yt.mjs status 确认当前节点为 plan，读取已完成产物及目标项目约束。

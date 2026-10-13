@@ -3,7 +3,7 @@
   "reviewed": false,
   "files": [
     {
-      "source": "docs/sy-comet/current/spec-delta.md",
+      "source": "docs/t-flow/current/spec-delta.md",
       "sourceHash": "SHA256",
       "target": "openspec/specs/capability/spec.md",
       "targetHash": "SHA256"

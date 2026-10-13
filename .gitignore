@@ -5,3 +5,7 @@ dist/
 .env
 *.local
 .DS_Store
+
+# Python 缓存（ui-ux-pro-max 的检索脚本会生成）
+__pycache__/
+*.py[cod]

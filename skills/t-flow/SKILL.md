@@ -1,9 +1,9 @@
 ---
-name: sy-comet
-description: 用于用户调用 /sy-comet 的完整可恢复研发工作流；当项目中存在进行中的 sy-comet 变更（.comet/runs/sy-comet/state.json 的 currentNode 非空）且用户要求继续相关工作（如"继续""接着做"）时也使用。
+name: t-flow
+description: 用于用户调用 /t-flow 的完整可恢复研发工作流；当项目中存在进行中的 t-flow 变更（.t-flow/runs/t-flow/state.json 的 currentNode 非空）且用户要求继续相关工作（如"继续""接着做"）时也使用。
 ---
 
-# sy-comet
+# t-flow
 
 ### 自动节点检测
 先读本 Skill 的 reference/runtime-contract.md。以项目根运行 `node <本 Skill>/scripts/yt.mjs status`，尚未启动才用 `init <change-id>`。用户消息用于判断当前意图，磁盘状态用于确定执行节点；二者冲突时解释影响并使用 reopen 回退，禁止跳过前序验收。

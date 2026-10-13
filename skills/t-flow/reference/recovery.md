@@ -9,7 +9,7 @@
 ## 异常场景
 
 - 归档复制失败：保留 current，不丢源文档；已有归档目录不能覆盖，先核实是否为上次中断的同一变更。
-- 归档清理中断（已归档但 current 残留）：status/init 会报 current 已存在；运行 yt.mjs doctor 确认 state 已是归档态后，手动删除 docs/sy-comet/current。
+- 归档清理中断（已归档但 current 残留）：status/init 会报 current 已存在；运行 yt.mjs doctor 确认 state 已是归档态后，手动删除 docs/t-flow/current。
 - state.json 损坏、产物与状态不一致、节点 Skill 或模板缺失、验证循环超限、确认失效：运行 yt.mjs doctor 获取逐项诊断，不依据会话记忆标记完成。
 
 ## 自检

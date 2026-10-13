@@ -1,9 +1,9 @@
 ---
-name: sy-comet-specify
-description: 仅由 sy-comet 入口路由到本阶段时使用。
+name: t-flow-specify
+description: 仅由 t-flow 入口路由到本阶段时使用。
 ---
 
-# sy-comet-specify
+# t-flow-specify
 
 ### Prerequisites
 运行 yt.mjs status 确认当前节点为 specify，读取已完成产物及目标项目约束。

@@ -5,7 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-const root=path.resolve(process.env.COMET_RUN_ROOT || process.cwd());
+const root=path.resolve(process.env.TFLOW_RUN_ROOT || process.cwd());
 const pkg=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const protocol=JSON.parse(fs.readFileSync(path.join(pkg,'reference/workflow-protocol.json')));
 const nodes=protocol.nodes.filter(n=>!n.disabled);
@@ -48,7 +48,7 @@ function safe(rel){
  for(const part of path.relative(root,full).split(path.sep)){ cursor=path.join(cursor,part); if(fs.existsSync(cursor)&&fs.lstatSync(cursor).isSymbolicLink())throw Error('不允许符号链接: '+rel); }
  return full;
 }
-const stateFile=safe(protocol.state.statePath), current='docs/sy-comet/current';
+const stateFile=safe(protocol.state.statePath), current='docs/t-flow/current';
 const logsDir=current+'/logs', evDir=current+'/evidence';
 function read(rel){return fs.readFileSync(safe(rel),'utf8');}
 function json(rel){return JSON.parse(read(rel));}
@@ -82,7 +82,7 @@ function validateEvidence(e,s,{path:evPath}={}){
  if(!e.id||!e.runId)throw Error('验证证据字段缺失或未通过');
  // (1) 路径 id 必须与内容 id 一致：否则是把 A 的证据复制成 B 的文件名冒充 B。
  if(evPath){
-  const m=/^docs\/sy-comet\/current\/evidence\/([^/]+)\.json$/.exec(evPath.split(path.sep).join('/'));
+  const m=/^docs\/t-flow\/current\/evidence\/([^/]+)\.json$/.exec(evPath.split(path.sep).join('/'));
   if(!m)throw Error('证据路径必须是 '+evDir+'/<id>.json');
   if(m[1]!==e.id)throw Error('证据文件与内容 id 不一致（路径 '+m[1]+'，内容 '+e.id+'）：请重新运行 run '+m[1]);
  }
@@ -105,7 +105,7 @@ function testResult(s){const r=json(current+'/test-results.json');if(r.changeId!
   // 否则"测试"可能从未作为测试运行过（历史缺陷）。
   // 判据是「被引用证据所属 id 的执行阶段」，且只看该 runId 那次执行，避免同一 id
   // 在两个阶段都被合法使用时误伤。
-  const m=/^docs\/sy-comet\/current\/evidence\/([^/]+)\.json$/.exec(String(t.evidence).split(path.sep).join('/'));
+  const m=/^docs\/t-flow\/current\/evidence\/([^/]+)\.json$/.exec(String(t.evidence).split(path.sep).join('/'));
   if(m&&m[1]!==String(t.id))throw Error('用例 '+t.id+' 引用了 '+m[1]+' 的证据：请用 run '+t.id+' 执行该用例本身');
   const cur=m?json(evDir+'/'+m[1]+'.json'):null;
   const rec=(m&&cur)?attemptsOf(m[1]).find(r=>r.runId===cur.runId):null;
@@ -178,7 +178,7 @@ function uiScope(){
 }
 // 读取当前变更的 ui-scope（供 run 强制计入证据输入）。
 function currentUiScope(){try{return fs.existsSync(safe(current+'/ui.md'))?parseUiScope(read(current+'/ui.md')):null;}catch{return null;}}
-function print(s){console.log(JSON.stringify(s,null,2));if(s.currentNode){console.log('NEXT: '+s.currentNode+(APPROVAL_NODES.includes(s.currentNode)?'（用户确认门禁，approve 记录确认原文后才能 advance）':''));console.log('SKILL: sy-comet-'+s.currentNode);}else console.log('NEXT: done');}
+function print(s){console.log(JSON.stringify(s,null,2));if(s.currentNode){console.log('NEXT: '+s.currentNode+(APPROVAL_NODES.includes(s.currentNode)?'（用户确认门禁，approve 记录确认原文后才能 advance）':''));console.log('SKILL: t-flow-'+s.currentNode);}else console.log('NEXT: done');}
 const PRUNE_DIRS=new Set(['.git','node_modules']);
 function expandInput(p){
  const f=safe(p);
@@ -255,7 +255,7 @@ function uiRouting(){
 }
 function doctor(){
  const problems=[];
- for(const n of nodes){if(!fs.existsSync(path.join(pkg,'..','sy-comet-'+n.id,'SKILL.md')))problems.push('缺少节点 Skill: sy-comet-'+n.id);}
+ for(const n of nodes){if(!fs.existsSync(path.join(pkg,'..','t-flow-'+n.id,'SKILL.md')))problems.push('缺少节点 Skill: t-flow-'+n.id);}
  // UI 设计 Skill 自检：主/兜底 Skill 必须可用（缺失时可自动安装）；ui.md 产出时须记录所用 Skill。
  if(!UI_ROUTING)problems.push('协议缺少 uiSkillRouting：UI 节点无法确定设计 Skill');
  else{
@@ -312,7 +312,7 @@ try{
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后运行 migrate 迁移进行中的状态。
 UI 设计 Skill：主 ${UI_ROUTING?UI_ROUTING.primary:'ui-ux-pro-max'}，兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}（ui-routing 查看；ui-use [Skill名] 记录实际所用）。缺失时运行 ensure-skills 自动安装到项目 .agents/skills/ 并链接 .claude/skills/（Claude 与 agent 两条发现路径都可用）。
 ui.md 须含 ${UI_SCOPE_BLOCK} 声明块（mode: new|change；files/affected 为真实界面路径），check 校验其存在，run 把 files 与 affected 强制计入证据输入——改动已声明的界面文件会使证据过期，避免"确认的界面≠交付的界面"。存量改造（mode: change）必须列 affected。UI 变更未绑定任何样式文件时 run 会告警。
-Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: COMET_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
+Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: TFLOW_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
  else if(cmd==='ensure-skills'){
   const results=ensureUiSkills({auto:true});
   for(const r of results)console.log((r.available?'OK   ':'FAIL ')+r.name+': '+r.action);
@@ -493,7 +493,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(cmd==='check'){console.log(APPROVAL_NODES.includes(s.currentNode)&&s.approvals[s.currentNode]?.fingerprint!==fingerprint(s,s.currentNode)?'ARTIFACTS_READY: 等待用户确认':'READY');print(s);}
     else if(s.currentNode==='archive'){
      if(cmd!=='archive')throw Error('归档请运行 archive');
-     const destination='docs/sy-comet/archive/'+s.changeId;if(fs.existsSync(safe(destination)))throw Error('归档目录已存在');
+     const destination='docs/t-flow/archive/'+s.changeId;if(fs.existsSync(safe(destination)))throw Error('归档目录已存在');
      s.completedNodes.push('archive');s.completedHashes.archive=fingerprint(s,'archive');s.currentNode=null;s.archivePath=destination;
      // Copy first: interruption preserves current and never loses source documents.
      fs.mkdirSync(path.dirname(safe(destination)),{recursive:true});fs.cpSync(safe(current),safe(destination),{recursive:true,errorOnExist:true,force:false});

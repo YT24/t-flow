@@ -1,9 +1,9 @@
 ---
-name: sy-comet-verify
-description: 仅由 sy-comet 入口路由到本阶段时使用。
+name: t-flow-verify
+description: 仅由 t-flow 入口路由到本阶段时使用。
 ---
 
-# sy-comet-verify
+# t-flow-verify
 
 ### Prerequisites
 运行 yt.mjs status 确认当前节点为 verify，读取已完成产物及目标项目约束。

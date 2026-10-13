@@ -1,0 +1,18 @@
+---
+name: t-flow-execute
+description: 仅由 t-flow 入口路由到本阶段时使用。
+---
+
+# t-flow-execute
+
+### Prerequisites
+运行 yt.mjs status 确认当前节点为 execute，读取已完成产物及目标项目约束。
+
+### Steps
+读取依赖已满足的任务；用 task 更新 in_progress。最小实现并运行直接相关验证。验证必须通过 yt.mjs run <任务id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> 真实执行：脚本运行命令、落盘日志并自动生成 evidence，禁止手写 evidence JSON；任务 modules 列出的文件/目录自动计入证据输入（脚本会校验 modules 路径真实存在），其余相关源文件用 --input 补充（支持目录，递归展开）。证据输入必须绑定至少一个实现文件：只绑定本工作流文档的证据会被拒绝，因为无法反映实现变化。建议用 --expect 断言命令输出里的成功标志，仅凭退出码时脚本会告警。参数校验在命令执行前完成；固定证据路径始终记录最新结果，失败即阻断推进。每次执行的独立证据保存在 evidence/attempts/<任务id>/<runId>.json，独立日志不会被重跑覆盖；修好后重跑同 id。然后用 task <id> done docs/t-flow/current/evidence/<任务id>.json 登记（证据 id 与路径须与任务 id 一致）。不能把一次测试泛化为所有功能。无强制每任务 commit。委派时交接需求、权限约束、文件范围、必调 Skill 和证据要求。
+
+### Completion reasoning
+逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
+
+### Red flags
+空文件、未经执行的测试、伪造用户确认、沿用过期证据均不能算完成。中断后从 status 和磁盘恢复，不重新初始化覆盖。

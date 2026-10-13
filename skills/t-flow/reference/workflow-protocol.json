@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "kind": "workflow-kernel",
-  "name": "sy-comet",
+  "name": "t-flow",
   "goal": "轻量研发：grill-me 澄清 → PRD/增量 Spec → UI → 技术设计 → 轻量任务 → 可恢复执行 → 测试报告 → 验收与 Spec 归档；可分发安装包自动补齐依赖。",
   "comment": "本文件只保留 scripts/yt.mjs 运行时真实消费的字段；节点顺序即推进顺序。门禁/校验逻辑硬编码于 yt.mjs（确认节点见各节点 approval，验证-修复上限 3 次）。编辑本文件会改变 protocolHash，进行中变更需运行 yt.mjs migrate。",
   "config": {
@@ -113,7 +113,7 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/clarify-log.md"
+            "docs/t-flow/current/clarify-log.md"
           ]
         }
       ]
@@ -124,19 +124,19 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/prd.md"
+            "docs/t-flow/current/prd.md"
           ]
         },
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/adr.md"
+            "docs/t-flow/current/adr.md"
           ]
         },
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/spec-delta.md"
+            "docs/t-flow/current/spec-delta.md"
           ]
         }
       ]
@@ -147,7 +147,7 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/ui.md"
+            "docs/t-flow/current/ui.md"
           ]
         }
       ]
@@ -158,7 +158,7 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/design.md"
+            "docs/t-flow/current/design.md"
           ]
         }
       ]
@@ -169,13 +169,13 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/plan.md"
+            "docs/t-flow/current/plan.md"
           ]
         },
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/tasks.json"
+            "docs/t-flow/current/tasks.json"
           ]
         }
       ]
@@ -186,7 +186,7 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/plan.md"
+            "docs/t-flow/current/plan.md"
           ]
         }
       ]
@@ -197,13 +197,13 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/test-report.md"
+            "docs/t-flow/current/test-report.md"
           ]
         },
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/test-results.json"
+            "docs/t-flow/current/test-results.json"
           ]
         }
       ]
@@ -214,13 +214,13 @@
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/archive-report.md"
+            "docs/t-flow/current/archive-report.md"
           ]
         },
         {
           "required": true,
           "paths": [
-            "docs/sy-comet/current/spec-sync.json"
+            "docs/t-flow/current/spec-sync.json"
           ]
         }
       ]
@@ -228,7 +228,7 @@
   ],
   "state": {
     "kind": "workflow-run",
-    "statePath": ".comet/runs/sy-comet/state.json",
+    "statePath": ".t-flow/runs/t-flow/state.json",
     "currentNodeField": "currentNode",
     "completedNodesField": "completedNodes",
     "evidenceField": "evidence"

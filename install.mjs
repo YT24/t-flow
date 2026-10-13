@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// sy-comet 安装/更新脚本：把 skills/ 下的工作流与依赖 Skill 安装到目标目录。
+// t-flow 安装/更新脚本：把 skills/ 下的工作流与依赖 Skill 安装到目标目录。
 //
 // 用法：
 //   node install.mjs --project /path/to/project [--apply]   安装到 <project>/.agents/skills/
 //   node install.mjs --global [--apply]                     安装到 ~/.agents/skills/
-//   node install.mjs --project <dir> --update [--apply]     更新已安装的 sy-comet
+//   node install.mjs --project <dir> --update [--apply]     更新已安装的 t-flow
 //   默认 preview（只列出将写入的文件，不落盘）；--apply 才真实写入。
 //   --force  覆盖内容不一致的同名 Skill（默认拒绝，防止覆盖你的本地修改）。
 //
-// 更新语义（--update）：以目标目录的 .sy-comet-manifest.json 为基线——
+// 更新语义（--update）：以目标目录的 .t-flow-manifest.json 为基线——
 //   目标文件与基线一致 → 视为旧版本，安全覆盖为新版；
 //   目标文件与基线不一致 → 视为本地修改，跳过并列为冲突（--force 才覆盖）；
 //   基线中存在但新包已删除的文件 → 未修改则清除，修改过则保留并提示。
@@ -18,8 +18,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.9.0';
-const MANIFEST = '.sy-comet-manifest.json';
+const VERSION = '2.0.0';
+const MANIFEST = '.t-flow-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
 const args = process.argv.slice(2);
@@ -69,7 +69,7 @@ const skills = fs.readdirSync(srcRoot, { withFileTypes: true })
   .map((e) => e.name);
 
 // UI 设计 Skill：协议声明的主/兜底 Skill 应当随包分发；缺失时提示（ui 节点会尝试自动安装）。
-const routingPath = path.join(srcRoot, 'sy-comet', 'reference', 'workflow-protocol.json');
+const routingPath = path.join(srcRoot, 't-flow', 'reference', 'workflow-protocol.json');
 let missingUiSkills = [];
 try {
   const routing = JSON.parse(fs.readFileSync(routingPath, 'utf8')).uiSkillRouting;
