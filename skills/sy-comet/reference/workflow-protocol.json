@@ -3,32 +3,37 @@
   "kind": "workflow-kernel",
   "name": "sy-comet",
   "goal": "轻量研发：grill-me 澄清 → PRD/增量 Spec → UI → 技术设计 → 轻量任务 → 可恢复执行 → 测试报告 → 验收与 Spec 归档；可分发安装包自动补齐依赖。",
-  "comment": "本文件只保留 scripts/yt.mjs 运行时真实消费的字段；节点顺序即推进顺序，门禁/校验逻辑硬编码于 yt.mjs（确认节点 clarify/ui/design/archive，验证-修复上限 3 次）。编辑本文件会改变 protocolHash，进行中变更需运行 yt.mjs migrate。",
+  "comment": "本文件只保留 scripts/yt.mjs 运行时真实消费的字段；节点顺序即推进顺序。门禁/校验逻辑硬编码于 yt.mjs（确认节点见各节点 approval，验证-修复上限 3 次）。编辑本文件会改变 protocolHash，进行中变更需运行 yt.mjs migrate。",
   "config": {
     "specTargetPrefix": "openspec/specs/",
-    "specSyncRequired": true
+    "specSyncRequired": true,
+    "maxVerifyFailures": 3
   },
   "nodes": [
     {
       "id": "clarify",
       "label": "需求澄清：车轮式追问直到无隐含假设，产物为澄清纪要",
+      "approval": true,
       "outputSchemas": ["yt.clarify.v1"]
     },
     {
       "id": "specify",
       "label": "整理 PRD 与 ADR",
+      "approval": true,
       "outputSchemas": ["yt.specify.v1"]
     },
     {
       "id": "ui",
       "label": "UI 设计；无界面需求时 skip",
       "skippable": true,
+      "approval": true,
       "outputSchemas": ["yt.ui.v1"]
     },
     {
       "id": "design",
       "label": "详细设计；小型变更（无架构调整/数据迁移/新接口）可 skip",
       "skippable": true,
+      "approval": true,
       "outputSchemas": ["yt.design.v1"]
     },
     {
@@ -49,6 +54,7 @@
     {
       "id": "archive",
       "label": "验收与 Spec 归档",
+      "approval": true,
       "outputSchemas": ["yt.archive.v1"]
     }
   ],

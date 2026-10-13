@@ -8,15 +8,15 @@ clarify → specify → ui → design → plan → execute → verify → archiv
 ```
 
 - 需求澄清由 `grill-me`（grilling）车轮式追问完成，UI 阶段由 `frontend-design` 生成原型
-- 四个用户确认门禁：需求澄清 / UI 原型 / 技术设计 / 交付验收（确认绑定产物指纹，产物一变确认自动失效）；无界面需求可 `skip ui`，小型变更（无架构调整、无数据迁移、无新接口）可 `skip design`，skip 原因均落盘
-- PRD 不单设门禁：design 的确认指纹覆盖 specify 全部产物，PRD 一变设计确认自动失效，需重新确认
-- 执行证据由 `yt.mjs run` 真实执行命令生成（限 execute/verify 阶段），禁止手写；任务 modules 与 `--input` 指定的文件/目录计入证据输入，输入一变证据自动过期
+- 五个用户确认门禁：需求澄清 / PRD 与增量 Spec / UI 原型 / 技术设计 / 交付验收（确认绑定产物指纹，产物一变确认自动失效）；门禁由 `workflow-protocol.json` 各节点的 `approval` 声明，改动即变更 protocolHash 需 migrate
+- 无界面需求可 `skip ui`，小型变更（无架构调整、无数据迁移、无新接口）可 `skip design`，skip 原因均落盘；skip 由 agent 自行判定并记录，不是用户确认的替代品，评审时应复核原因
+- 执行证据由 `yt.mjs run` 真实执行命令生成（限 execute/verify 阶段），禁止手写；任务 `modules` 必须非空且路径真实存在，证据必须绑定至少一个实现文件，源码一变证据自动过期
 - 验证-修复循环最多 3 次（以 reopen 时存在 failed 结果计），超限强制交用户决策，`decide` 记录决策原文后解除
 - 状态在 `.comet/runs/sy-comet/state.json`，产物在 `docs/sy-comet/`，中断/新会话可直接续跑；工作流文件更新后用 `migrate` 迁移进行中的状态
 
 ## 机制的边界（如实说明）
 
-`yt.mjs` 强制的是结构、存在性、hash 新鲜度与状态流转——即防呆与防过期。用户确认原文、证据所跑命令的真实性、Spec 合并的 `reviewed` 标记均由执行 agent 写入，工具无法辨别伪造；审计线索在 state.json 的 `history` 与 `docs/sy-comet/current/logs/`。部署时把它们当作可回溯的账本，而不是防伪证明。
+`yt.mjs` 强制的是结构、存在性、hash 新鲜度与状态流转——即防呆与防过期。具体而言它能保证：产物存在且非空、任务 `modules` 非空且路径真实、证据绑定到实现文件且输入变化即过期、状态流转与确认指纹一致。**它不能保证**：证据所跑命令的真实语义（`run` 只看退出码，`-- true` 也能生成 passed 证据）、测试用例是否真的覆盖了 PRD 需求（覆盖关系靠人工核对，脚本不校验）、Spec 合并是否忠实（只比对源/目标文件 hash 与 `reviewed` 标记）。用户确认原文、证据所跑命令的真实性、Spec 合并的 `reviewed` 标记均由执行 agent 写入，工具无法辨别伪造；审计线索在 state.json 的 `history` 与 `docs/sy-comet/current/logs/`。部署时把它们当作可回溯的账本，而不是防伪证明。
 
 ## 安装
 

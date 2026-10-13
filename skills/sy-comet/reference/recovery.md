@@ -4,7 +4,7 @@
 
 ## 证据过期
 
-任务或测试证据的输入（上游文档、任务 modules、--input 指定的文件/目录）hash 变化即过期。过期的任务证据：reopen execute 后用 run <任务id> 重跑同 id 证据，再 task done 登记；过期的测试证据：在 verify 直接 run 同 id 重跑并更新 test-results.json。verify 自身产物（test-report.md、test-results.json）不计入证据输入，重写报告不会使新证据失效。
+任务或测试证据的输入（上游文档、任务 modules、--input 指定的文件/目录）hash 变化即过期。任务 modules 必须非空且路径真实存在，否则 run 直接拒绝；证据还必须绑定至少一个实现文件，只绑定本工作流文档的证据不予生成。过期的任务证据：reopen execute 后用 run <任务id> 重跑同 id 证据，再 task done 登记；过期的测试证据：在 verify 直接 run 同 id 重跑并更新 test-results.json。verify 自身产物（test-report.md、test-results.json）不计入证据输入，重写报告不会使新证据失效。
 
 ## 异常场景
 

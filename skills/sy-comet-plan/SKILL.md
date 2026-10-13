@@ -9,7 +9,7 @@ description: 仅由 sy-comet 入口路由到本阶段时使用。
 运行 yt.mjs status 确认当前节点为 plan，读取已完成产物及目标项目约束。
 
 ### Steps
-编写简短 plan.md 和 tasks.json。每项 id/title/dependsOn/modules/acceptance/status；status 初始 pending。modules 写本任务触及的文件或目录的真实相对路径（execute 阶段自动计入证据输入），不写描述性文字。按可验收能力拆，不写完整实现代码或测试代码，不调用 writing-plans。检查需求覆盖、循环依赖和接口先后关系。任务状态只保存在 tasks.json，不在 plan.md 维护第二份。
+编写简短 plan.md 和 tasks.json。每项 id/title/dependsOn/modules/acceptance/status；status 初始 pending。modules 写本任务触及的文件或目录的真实相对路径，必须是非空数组且路径真实存在（脚本强制校验：留空或路径不存在会被 check/run 拒绝），execute 阶段自动计入证据输入，不写描述性文字。按可验收能力拆，不写完整实现代码或测试代码，不调用 writing-plans。检查需求覆盖、循环依赖和接口先后关系。任务状态只保存在 tasks.json，不在 plan.md 维护第二份。
 
 ### Completion reasoning
 逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
