@@ -6,7 +6,7 @@
       "id": "REQ-01",
       "required": true,
       "status": "not_run",
-      "evidence": "docs/t-flow/current/evidence/REQ-01.json"
+      "evidence": "docs/t-flow/change/<change-id>/evidence/REQ-01.json"
     }
   ]
 }

@@ -5,3 +5,5 @@
 停顿点由 protocol 各节点的 approval 字段声明（yt.mjs 由此推导门禁节点），增删或调整停顿点会改变 protocolHash，进行中变更需 migrate。design 的确认指纹覆盖 specify 全部产物，PRD/ADR/spec-delta 变化会使 design 确认自动失效；specify 自身也有确认，故范围契约在 PRD 阶段即被用户确认一次。
 
 验证-修复循环超限时，向用户展示失败历史并等待方向选择（继续修复/调整需求/停止），用 decide <用户决策原文> 记录后解除。
+
+UI 开始前先展示是否跳过以及所用设计 Skill 的选择（ui-ux-pro-max 推荐、frontend-design、跳过）。推荐项不等于用户批准；没有既有明确选择时等待用户回答，选择后用 ui-use <Skill名> 或 skip ui <原因> 记录。status/resume 会在 UI 未选择时输出 UI_CHOICE，已选择时输出 UI_SELECTED；原型完成后的 approve ui 仍是独立验收。

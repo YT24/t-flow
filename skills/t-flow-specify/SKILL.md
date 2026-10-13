@@ -6,6 +6,7 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 # t-flow-specify
 
 ### Prerequisites
+所有命令固定使用 `yt.mjs --change <change-id> <命令>`，沿用入口选定的 change；产物只读写 `docs/t-flow/change/<change-id>/`。
 运行 yt.mjs status 确认当前节点为 specify，读取已完成产物及目标项目约束。
 
 ### Steps

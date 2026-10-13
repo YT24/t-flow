@@ -29,12 +29,25 @@
   "uiChange": {
     "comment": "存量项目 UI 变更的绑定与检查。scopes 声明本次改动类型；styleGlobs 是样式层文件模式——UI 变更的证据若完全没绑定到这些模式，视觉改动不会被检出，run 会告警。affectedPrefixes 用于识别'改动落在既有界面目录'。",
     "styleGlobs": [
-      "**/*.css", "**/*.scss", "**/*.sass", "**/*.less", "**/*.styl",
-      "**/*.stylus", "**/*.pcss", "**/*.postcss",
-      "**/tailwind.config.*", "**/postcss.config.*", "**/vite.config.*", "**/webpack.config.*",
-      "**/theme*.{js,ts,json,jsx,tsx}", "**/tokens*.{js,ts,json,jsx,tsx}",
-      "**/design-tokens*", "**/variables*.{css,scss,less}",
-      "**/*.module.{css,scss,less}", "**/styled-components/**", "**/emotion*"
+      "**/*.css",
+      "**/*.scss",
+      "**/*.sass",
+      "**/*.less",
+      "**/*.styl",
+      "**/*.stylus",
+      "**/*.pcss",
+      "**/*.postcss",
+      "**/tailwind.config.*",
+      "**/postcss.config.*",
+      "**/vite.config.*",
+      "**/webpack.config.*",
+      "**/theme*.{js,ts,json,jsx,tsx}",
+      "**/tokens*.{js,ts,json,jsx,tsx}",
+      "**/design-tokens*",
+      "**/variables*.{css,scss,less}",
+      "**/*.module.{css,scss,less}",
+      "**/styled-components/**",
+      "**/emotion*"
     ],
     "styleWarnEnabled": true,
     "styleWarnNote": "UI 变更（ui 节点有产物）时，若证据输入未匹配任何 styleGlobs，说明样式/主题改动不会被'证据过期'检出——run 会打印 WARN。多数情况下应把样式目录或主题文件加入任务 modules 或 --input。",
@@ -227,10 +240,12 @@
     }
   ],
   "state": {
-    "kind": "workflow-run",
-    "statePath": ".t-flow/runs/t-flow/state.json",
+    "kind": "workflow-run-multi",
+    "statePath": ".t-flow/runs/t-flow/active",
     "currentNodeField": "currentNode",
     "completedNodesField": "completedNodes",
-    "evidenceField": "evidence"
+    "evidenceField": "evidence",
+    "changesBase": "docs/t-flow/change",
+    "note": "多 change 布局：状态按 <change-id>/state.json 存于 statePath 所在目录；产物在 changesBase/<change-id>/；active 文件记录聚焦的变更。"
   }
 }

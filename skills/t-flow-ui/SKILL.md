@@ -6,20 +6,29 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 # t-flow-ui
 
 ### Prerequisites
+所有命令固定使用 `yt.mjs --change <change-id> <命令>`，沿用入口选定的 change；产物只读写 `docs/t-flow/change/<change-id>/`。
 运行 yt.mjs status 确认当前节点为 ui，读取已完成产物及目标项目约束。
 
 ### Steps
 
+**开始前 · 展示选择并等待回答。** 首次进入 UI 且本 change 尚未记录选择时，先向用户询问「本次是否需要 UI 设计？需要时使用哪个 Skill？」。使用可用的问答工具一次展示三个选项：
+
+1. `ui-ux-pro-max`（推荐）：包含设计系统、交互与无障碍指导。
+2. `frontend-design`：侧重视觉与页面实现，仍须补齐五态与权限。
+3. 跳过 UI 设计：不生成本阶段原型，记录用户选择与原因后进入 design。
+
+展示选择后等待用户回答，不能将推荐项视为已选择，不能先生成原型再询问。选 Skill 后才运行 `yt.mjs --change <change-id> ui-use <Skill名>`；跳过则运行 `yt.mjs --change <change-id> skip ui <用户选择及原因>`。若当前任务中用户已明确选择或明确不需要界面，沿用该决定；状态已记录选择且需求未变时直接续跑，不重复询问。回退至 UI 或前序节点会清除旧选择，应重新确认。
+
 **第一步 · 备齐设计 Skill 并记录所用。** 运行 `yt.mjs ensure-skills`：它会把主 Skill `ui-ux-pro-max` 与兜底 `frontend-design` 自动安装到项目 `.agents/skills/`，并在 `.claude/skills/` 建立同名符号链接，使 Claude 与 agent 两条发现路径都能命中。已存在时不重复复制。
 
-然后运行 `yt.mjs ui-routing` 查看当前可用性，并用 `yt.mjs ui-use [Skill名]` 记录本次所用：
+然后运行 `yt.mjs ui-routing` 查看当前可用性，并用 `yt.mjs ui-use <Skill名>` 记录本次所用：
 
 | Skill | 何时用 |
 |---|---|
-| `ui-ux-pro-max`（主） | 默认选择。覆盖 50+ 风格、161 配色、57 字体配对、10 个技术栈、99 条 UX 准则，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），后台/C 端/移动端都适用 |
-| `frontend-design`（兜底） | 仅当主 Skill 不可用，或你明确判断本次只需要纯审美指导时。它是纯审美指导，**不覆盖五态与角色权限**，须自行补齐 |
+| `ui-ux-pro-max`（主） | 推荐选择，须经用户选择。覆盖 50+ 风格、161 配色、57 字体配对、10 个技术栈、99 条 UX 准则，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），后台/C 端/移动端都适用 |
+| `frontend-design`（兜底） | 仅当主 Skill 不可用，或用户明确选择它时。它是纯审美指导，**不覆盖五态与角色权限**，须自行补齐 |
 
-不带参数时 `ui-use` 默认记录主 Skill。以兜底完成会打印 WARN，须在 ui.md 写明原因。
+`ui-use` 必须显式提供用户选定的 Skill 名；不带参数会被拒绝。以兜底完成会打印 WARN，须在 ui.md 写明原因。
 
 **第二步 · 生成原型。** 加载所选 Skill，复用已确认角色/权限/流程。`ui-ux-pro-max` 自带可检索的本地数据库，按**单一主导意图**查询（需 Python 3，无外部依赖）：
 
@@ -47,10 +56,10 @@ affected: [src/pages/OrderDetail.vue, src/styles/theme.css]      # mode: change 
 
 **存量项目（mode: change）额外注意**：若本次改动涉及样式/主题/design token，务必把样式文件列入 `files` 或 `affected`。`run` 在 UI 变更未绑定任何样式文件时会告警——因为视觉改动若不在证据输入里，就不会触发"证据过期"，等于没人复核过新界面。
 
-没有界面需求时不写 ui.md：向用户说明理由，运行 `yt.mjs skip ui <原因>` 记录后本节点直接完成。工具不具备时不可假装已实测；未实测须写明原因与残余风险。
+用户明确不需要界面或选择跳过时不写 ui.md：沿用用户决定，运行 `yt.mjs skip ui <原因>` 记录后本节点直接完成。工具不具备时不可假装已实测；未实测须写明原因与残余风险。
 
 ### Completion reasoning
-逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。check 通过后必须 stop：向用户展示原型，等待用户明确确认没有问题，用 yt.mjs approve ui <用户确认原文> 记录后才允许 advance；未收到确认不得进入下一阶段。以 skip 完成的节点无产物、无需确认，status 应已进入 design。确认后 advance，仅按 NEXT/SKILL 输出继续。
+逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。check 通过后必须 stop：向用户展示原型，等待用户明确确认没有问题，用 yt.mjs approve ui <用户确认原文> 记录后才允许 advance；未收到确认不得进入下一阶段。以 skip 完成的节点不新增产物、无需原型确认，status 应已进入 design；已有历史原型保留，后续执行忽略其 UI scope 与样式检查。确认后 advance，仅按 NEXT/SKILL 输出继续。
 
 ### Red flags
 空文件、未经执行的测试、伪造用户确认、沿用过期证据均不能算完成。中断后从 status 和磁盘恢复，不重新初始化覆盖。
