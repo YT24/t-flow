@@ -19,7 +19,14 @@ function fixture(t) {
  const pass=()=>{ok('run','T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');ok('task','T-01','done','docs/sy-comet/current/evidence/T-01.json');};
  // 走到 ui 节点（不 skip）
  const atUi=()=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?'REQ-01 behavior':'content');ok('approve','specify','confirmed');ok('advance');};
- return {base,root,run,ok,put,doc,read,setup,pass,atUi};
+ // 合法 ui.md：含 ui-scope 声明块，files/affected 指向真实存在的界面文件
+ const uiMd=(scope={})=>{
+  const {mode='new',files=['src/App.vue'],affected=[]}=scope;
+  put('src/App.vue','export default {};');
+  for(const a of affected)put(a,a.endsWith('.css')?'a{}':'export default {};');
+  doc('ui.md',['```ui-scope',`mode: ${mode}`,`files: [${files.join(', ')}]`,`affected: [${affected.join(', ')}]`,'```','','prototype'].join('\n'));
+ };
+ return {base,root,run,ok,put,doc,read,setup,pass,atUi,uiMd};
 }
 
 test('check validates artifacts before approval but advance still requires approval',t=>{const f=fixture(t);f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('check');assert.equal(f.run('advance').code,1);});
@@ -149,12 +156,12 @@ test('ui-use rejects an unrelated skill name and non-ui nodes',t=>{
  assert.equal(g.run('ui-use').code,1);
 });
 test('doctor flags ui.md without a recorded skill once past ui',t=>{
- const f=fixture(t);f.atUi();f.doc('ui.md','prototype');
+ const f=fixture(t);f.atUi();f.uiMd();
  f.ok('approve','ui','confirmed');f.ok('advance');
  const r=f.run('doctor');assert.equal(r.code,1);assert.match(r.out,/未记录所用设计 Skill/);
 });
 test('doctor stays OK when the skill is recorded or ui was skipped',t=>{
- const rec=fixture(t);rec.atUi();rec.ok('ensure-skills');rec.ok('ui-use');rec.doc('ui.md','prototype');rec.ok('approve','ui','confirmed');rec.ok('advance');rec.ok('doctor');
+ const rec=fixture(t);rec.atUi();rec.ok('ensure-skills');rec.ok('ui-use');rec.uiMd();rec.ok('approve','ui','confirmed');rec.ok('advance');rec.ok('doctor');
  const skipped=fixture(t);skipped.setup();skipped.ok('doctor');
 });
 test('doctor reports a missing bundled skill as a distribution fault',t=>{
@@ -162,4 +169,94 @@ test('doctor reports a missing bundled skill as a distribution fault',t=>{
  fs.rmSync(path.join(f.base,'skills','ui-ux-pro-max'),{recursive:true,force:true});
  const r=f.run('doctor');assert.equal(r.code,1);
  assert.match(r.out,/声明为分发内容但本包缺失: ui-ux-pro-max/);
+});
+
+// —— 存量项目 UI 变更 ——
+test('ui.md requires a ui-scope block and rejects malformed declarations',t=>{
+ const f=fixture(t);f.atUi();
+ f.doc('ui.md','no scope block here');
+ assert.match(f.run('check').out,/缺少 ```ui-scope 声明块/);
+ f.doc('ui.md','```ui-scope\nmode: bogus\nfiles: [src/App.vue]\n```');
+ assert.match(f.run('check').out,/mode 必须是 new 或 change/);
+ f.doc('ui.md','```ui-scope\nmode: new\nfiles: []\n```');
+ assert.match(f.run('check').out,/files 不能为空/);
+ f.doc('ui.md','```ui-scope\nmode: new\nfiles: [src/Ghost.vue]\n```');
+ assert.match(f.run('check').out,/路径不存在或非法/);
+});
+test('change mode must declare affected existing interfaces',t=>{
+ const f=fixture(t);f.atUi();f.uiMd({mode:'change',files:['src/App.vue'],affected:[]});
+ assert.match(f.run('check').out,/必须用 affected 列出受影响的既有界面/);
+ f.uiMd({mode:'change',files:['src/App.vue'],affected:['src/pages/Old.vue']});
+ assert.equal(f.run('check').code,0);
+});
+test('ui-scope files are force-bound even when missing from task modules',t=>{
+ const f=fixture(t);
+ f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('approve','clarify','confirmed');f.ok('advance');
+ for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
+ f.ok('approve','specify','confirmed');f.ok('advance');f.ok('ui-use');f.uiMd();
+ f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
+ f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
+ // modules 故意不含 ui-scope 声明的 src/App.vue
+ f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ f.ok('advance');
+ f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ const ev=f.read('docs/sy-comet/current/evidence/T-01.json');
+ assert.ok(ev.inputs['src/App.vue'],'ui-scope 声明的文件应被强制计入证据输入');
+ f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/sy-comet/current/evidence/T-01.json');
+ // 改动已确认的界面文件 -> 证据必须过期
+ f.put('src/App.vue','export default {changed:true};');
+ const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/验证证据过期: src\/App\.vue/);
+});
+test('affected interfaces are bound too, so declared impact cannot be bypassed',t=>{
+ const f=fixture(t);
+ f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('approve','clarify','confirmed');f.ok('advance');
+ for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
+ f.ok('approve','specify','confirmed');f.ok('advance');f.ok('ui-use');
+ f.uiMd({mode:'change',files:['src/App.vue'],affected:['src/pages/Old.vue']});
+ f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
+ f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
+ f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ f.ok('advance');
+ f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ const ev=f.read('docs/sy-comet/current/evidence/T-01.json');
+ assert.ok(ev.inputs['src/pages/Old.vue'],'affected 声明的既有界面也应被绑定');
+ f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/sy-comet/current/evidence/T-01.json');
+ f.put('src/pages/Old.vue','export default {touched:true};');
+ const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/验证证据过期: src\/pages\/Old\.vue/);
+});
+test('run warns when a UI change binds no style or theme file',t=>{
+ const f=fixture(t);f.setup();
+ // setup 走 skip ui：没有 ui.md，因此不应告警
+ const noUi=f.run('run','T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ assert.doesNotMatch(noUi.out,/未绑定任何样式/);
+const g=fixture(t);
+ g.ok('init','test');g.doc('clarify-log.md','scope');g.ok('approve','clarify','confirmed');g.ok('advance');
+ for(const p of ['prd.md','adr.md','spec-delta.md'])g.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
+ g.ok('approve','specify','confirmed');g.ok('advance');g.ok('ui-use');g.uiMd();
+ g.ok('approve','ui','confirmed');g.ok('advance');g.ok('skip','design','small');
+ g.doc('plan.md','plan');g.put('src/api.js','export const x=1;');
+ g.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ g.ok('advance');
+ const warned=g.run('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ assert.match(warned.out,/UI 变更（ui.md 存在），但证据未绑定任何样式\/主题文件/);
+ // 绑定样式文件后不再告警
+ g.put('src/styles/theme.css',':root{--brand:#0a0}');
+ const ok=g.run('run','T-01','--input','src/api.js','--input','src/styles/theme.css','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ assert.doesNotMatch(ok.out,/未绑定任何样式/);
+});
+test('adding a new page is detected through the ui-scope directory binding',t=>{
+ const f=fixture(t);
+ f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('approve','clarify','confirmed');f.ok('advance');
+ for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
+ f.ok('approve','specify','confirmed');f.ok('advance');f.ok('ui-use');
+ f.put('src/pages/Existing.vue','export default {};');
+ f.doc('ui.md','```ui-scope\nmode: new\nfiles: [src/pages]\naffected: []\n```');
+ f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
+ f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
+ f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ f.ok('advance');
+ f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/sy-comet/current/evidence/T-01.json');
+ f.put('src/pages/NewPage.vue','export default {};');
+ const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/验证证据目录已变化: src\/pages/);
 });

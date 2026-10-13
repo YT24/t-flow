@@ -31,7 +31,21 @@ python3 <skill目录>/scripts/search.py "chip badge overflow nowrap" --stack htm
 
 它的 SKILL.md 有完整的 Query Contract：查询用 2–5 个有意义词、先查语义化 UX 结果再查技术栈实现，**结果为空或跑题时改写重试一次**，仍失败就如实说明未找到而非套用泛化建议。需要更细的规则时读它的 `references/quick-reference.md`（119 条 UX 准则）与 `references/pro-rules.md`（交付前自检清单）。不要自动新增全套 CRUD；只实现本次 PRD 范围。
 
-**第三步 · 写 ui.md**（可复制 `templates/ui.md`），至少包含：原型路径、所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**——这正是把它写进 ui.md 的原因：主 Skill 覆盖面广，兜底 Skill 不覆盖，靠记录来暴露差距。
+**第三步 · 写 ui.md**（可复制 `templates/ui.md`）。**必须包含 `ui-scope` 声明块**——这是把「用户确认的界面」与「真实交付的文件」绑定的机制：
+
+```ui-scope
+mode: change                                                     # new（新建界面）| change（存量项目改造既有界面）
+files: [src/pages/OrderList.vue]                                 # 本次交付/改动的界面文件或目录，必须真实存在
+affected: [src/pages/OrderDetail.vue, src/styles/theme.css]      # mode: change 时必填：受影响的既有界面与样式
+```
+
+- `files` 与 `affected` 都会被**强制计入证据输入**：改动其中任一文件都会使证据过期，无法出现"确认的是 A、交付的是 B"
+- `affected` 不是可有可无的清单：存量改造时它就是**影响面与回归范围**，用户正是在这一步确认"这改动会不会波及其他页面"
+- 路径不存在、`mode` 非法、`change` 却漏填 `affected`，`check` 都会直接阻断
+
+另外记录：所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**。
+
+**存量项目（mode: change）额外注意**：若本次改动涉及样式/主题/design token，务必把样式文件列入 `files` 或 `affected`。`run` 在 UI 变更未绑定任何样式文件时会告警——因为视觉改动若不在证据输入里，就不会触发"证据过期"，等于没人复核过新界面。
 
 没有界面需求时不写 ui.md：向用户说明理由，运行 `yt.mjs skip ui <原因>` 记录后本节点直接完成。工具不具备时不可假装已实测；未实测须写明原因与残余风险。
 

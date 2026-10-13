@@ -16,6 +16,28 @@ const SPEC_REQUIRED=cfg.specSyncRequired!==false;
 // 否则"必测项"完全由被测方自定义，需求与测试之间没有可追溯性（历史缺陷）。
 const REQ_PATTERN=cfg.requirementIdPattern??'REQ-\\d+';
 const REQ_COVERAGE=cfg.requireCoverage!==false;
+// 存量项目 UI 变更：样式层文件模式。UI 变更的证据若完全没绑到这些模式，
+// 说明主题/样式改动不会被"证据过期"检出（历史缺陷）。
+const UI_CHANGE=protocol.uiChange||null;
+const STYLE_WARN=UI_CHANGE?.styleWarnEnabled!==false&&!!UI_CHANGE;
+// 轻量 glob：支持 ** 、* 、? 与 {a,b}，用于匹配样式文件模式。
+// 注意：先把 glob 元字符转成占位符，再转义字面量，最后还原——否则 {} 展开出的
+// 分组括号会被后续转义步骤破坏。
+function matchStyleGlob(rel){
+ if(!UI_CHANGE?.styleGlobs?.length)return false;
+ const p=rel.split(path.sep).join('/');
+ for(const g of UI_CHANGE.styleGlobs){
+  const rx='^'+g
+   .replace(/\{([^}]*)\}/g,(_,inner)=>'\u0001'+inner.split(',').map(s=>s.trim()).join('\u0002')+'\u0003')
+   .replace(/\*\*\//g,'\u0000').replace(/\*/g,'\u0004').replace(/\?/g,'\u0005')
+   .replace(/[.+^$()|[\]\\]/g,'\\$&')
+   .replace(/\u0000/g,'(?:.*/)?').replace(/\u0004/g,'[^/]*').replace(/\u0005/g,'[^/]')
+   .replace(/\u0001/g,'(?:').replace(/\u0002/g,'|').replace(/\u0003/g,')')
+   +'$';
+  try{if(new RegExp(rx).test(p))return true;}catch{/* 模式非法则跳过 */}
+ }
+ return false;
+}
 const [cmd='help',arg,value,...extra]=process.argv.slice(2);
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 // 确认门禁与验证-修复上限均由协议声明（改动这些值会改变 protocolHash，进行中变更需 migrate）。
@@ -104,6 +126,7 @@ function coverage(r){
 function syncResult(s){const p=current+'/spec-sync.json';if(!fs.existsSync(safe(p))){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}const r=json(p);if(r.changeId!==s.changeId||!Array.isArray(r.files))throw Error('Spec 同步证据非法');if(!r.files.length){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}for(const f of r.files){if(!f.source.startsWith(current+'/')||!f.target.startsWith(SPEC_PREFIX))throw Error('Spec 路径不正确（目标须以 '+SPEC_PREFIX+' 开头）');if(sha(read(f.source))!==f.sourceHash||sha(read(f.target))!==f.targetHash)throw Error('Spec 同步证据过期');}if(r.reviewed!==true)throw Error('Spec 合并未核对');}
 function validate(s,id,{approval=true}={}){
  const n=node(id);for(const p of files(n)){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;if(!read(p).trim())throw Error('产物为空 '+p);}
+ if(id==='ui')uiScope();
  if(id==='plan')tasks();
  if(id==='execute'){for(const t of tasks()){if(t.status!=='done'||!t.evidence)throw Error('任务未完成 '+t.id);validateEvidence(json(t.evidence),s,{path:t.evidence});}}
  if(id==='verify'){validate(s,'execute',{approval:false});testResult(s);}
@@ -111,6 +134,50 @@ function validate(s,id,{approval=true}={}){
  if(approval&&APPROVAL_NODES.includes(id)&&s.approvals[id]?.fingerprint!==fingerprint(s,id))throw Error('需要用户确认或确认已失效: '+id);
 }
 function drift(s){for(const id of s.completedNodes){if(s.completedHashes[id]!==fingerprint(s,id))throw Error('已完成产物变化，请 reopen '+id);}}
+// —— ui-scope：把「用户确认的界面」与真实文件绑定 ——
+// ui.md 里形如：
+//   ```ui-scope
+//   mode: change            # new | change
+//   files: [src/pages/Page1.vue]
+//   affected: [src/pages/Page2.vue]
+//   ```
+// 目的：ui 门禁确认的是"关于界面的描述"，此前与真实交付物无绑定——确认的界面可以是 A，
+// 实际交付的却是 B。声明后这些路径会被校验存在，并被强制计入证据输入。
+const UI_SCOPE_BLOCK=UI_CHANGE?.declareBlock||'ui-scope';
+function parseUiScope(text){
+ const re=new RegExp('```'+UI_SCOPE_BLOCK+'\\s*\\n([\\s\\S]*?)```');
+ const m=re.exec(text);
+ if(!m)return null;
+ const out={mode:null,files:[],affected:[]};
+ for(const raw of m[1].split('\n')){
+  const line=raw.trim();if(!line||line.startsWith('#'))continue;
+  const kv=/^([A-Za-z_]+)\s*:\s*(.*)$/.exec(line);
+  if(!kv)continue;
+  const [,k,v]=kv;
+  const list=v.trim().replace(/^\[|\]$/g,'').split(',').map(s=>s.trim().replace(/^["']|["']$/g,'')).filter(Boolean);
+  if(k==='mode')out.mode=v.trim().replace(/^["']|["']$/g,'')||null;
+  else if(k==='files')out.files.push(...list);
+  else if(k==='affected')out.affected.push(...list);
+ }
+ return out;
+}
+// 校验 ui.md 的 ui-scope 声明：模式合法、路径真实存在、改造时必须列受影响界面。
+function uiScope(){
+ const p=current+'/ui.md';
+ if(!fs.existsSync(safe(p)))return null;
+ const sc=parseUiScope(read(p));
+ if(!sc){
+  throw Error('ui.md 缺少 ```'+UI_SCOPE_BLOCK+' 声明块：需声明本次交付的界面文件（存量项目改造时另列 affected），把用户确认的界面与真实文件绑定。参见 templates/ui.md');
+ }
+ if(!['new','change'].includes(sc.mode))throw Error('ui-scope 的 mode 必须是 new 或 change（当前 '+(sc.mode||'<空>')+'）');
+ if(!sc.files.length)throw Error('ui-scope 的 files 不能为空：至少列出本次交付/改动的界面文件或目录');
+ const bad=sc.files.concat(sc.affected).filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
+ if(bad.length)throw Error('ui-scope 声明的路径不存在或非法: '+bad.join(', ')+'（须为项目内真实相对路径）');
+ if(sc.mode==='change'&&!sc.affected.length)throw Error('ui-scope 的 mode=change（存量改造）时必须用 affected 列出受影响的既有界面，供用户评估影响面与回归范围');
+ return sc;
+}
+// 读取当前变更的 ui-scope（供 run 强制计入证据输入）。
+function currentUiScope(){try{return fs.existsSync(safe(current+'/ui.md'))?parseUiScope(read(current+'/ui.md')):null;}catch{return null;}}
 function print(s){console.log(JSON.stringify(s,null,2));if(s.currentNode){console.log('NEXT: '+s.currentNode+(APPROVAL_NODES.includes(s.currentNode)?'（用户确认门禁，approve 记录确认原文后才能 advance）':''));console.log('SKILL: sy-comet-'+s.currentNode);}else console.log('NEXT: done');}
 const PRUNE_DIRS=new Set(['.git','node_modules']);
 function expandInput(p){
@@ -244,6 +311,7 @@ try{
 需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 中已通过必测用例的 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后运行 migrate 迁移进行中的状态。
 UI 设计 Skill：主 ${UI_ROUTING?UI_ROUTING.primary:'ui-ux-pro-max'}，兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}（ui-routing 查看；ui-use [Skill名] 记录实际所用）。缺失时运行 ensure-skills 自动安装到项目 .agents/skills/ 并链接 .claude/skills/（Claude 与 agent 两条发现路径都可用）。
+ui.md 须含 ${UI_SCOPE_BLOCK} 声明块（mode: new|change；files/affected 为真实界面路径），check 校验其存在，run 把 files 与 affected 强制计入证据输入——改动已声明的界面文件会使证据过期，避免"确认的界面≠交付的界面"。存量改造（mode: change）必须列 affected。UI 变更未绑定任何样式文件时 run 会告警。
 Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: COMET_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
  else if(cmd==='ensure-skills'){
   const results=ensureUiSkills({auto:true});
@@ -375,10 +443,25 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
       Object.assign(inputs,boundInputs(s,t.modules));inputRoots.push(...t.modules);
      }
     }
+    // ui-scope 声明的界面文件强制计入证据输入：用户确认的界面一旦变化，证据必须过期。
+    // files（本次交付）与 affected（受影响的既有界面）都要绑定——否则"用户在 ui 门禁里
+    // 确认过的影响面"可以被绕过：改了一个已声明的受影响页面却检测不到。
+    const sc=currentUiScope();
+    if(sc&&(sc.files.length||sc.affected.length)){
+     const declared=[...new Set([...sc.files,...sc.affected])];
+     const bad=declared.filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
+     if(bad.length)throw Error('ui-scope 声明的界面文件不存在: '+bad.join(', ')+'（ui.md 与磁盘不一致，请修正或 reopen ui）');
+     for(const f of declared){for(const [rel,h]of expandInput(f))inputs[rel]=h;inputRoots.push(f);}
+    }
     // 证据输入必须至少覆盖一个非文档（源码/配置）文件，否则该证据无法反映实现变化。
     const docPrefix=current+'/';
     if(!Object.keys(inputs).some(p=>!p.startsWith(docPrefix)))throw Error('证据输入只包含本工作流文档，未绑定任何实现文件：请用 --input 指定相关源码，或检查任务 modules');
     if(!expects.length&&minOutput<=0)console.error('WARN: 未使用 --expect/--min-output，证据仅以退出码判定；命令语义无法被脚本校验。');
+    // 存量项目 UI 变更：样式/主题改动若不在证据输入里，视觉变化不会被"证据过期"检出。
+    if(STYLE_WARN&&fs.existsSync(safe(current+'/ui.md'))){
+     const styleBound=Object.keys(inputs).filter(p=>matchStyleGlob(p));
+     if(!styleBound.length)console.error('WARN: 本次为 UI 变更（ui.md 存在），但证据未绑定任何样式/主题文件。若本次涉及样式或 design token，请把样式目录或主题文件加入任务 modules 或 --input——否则视觉改动不会使证据过期。');
+    }
     const directories=Object.fromEntries([...new Set(inputRoots)].filter(p=>fs.statSync(safe(p)).isDirectory()).map(p=>[p,expandInput(p).map(([rel])=>rel).sort()]));
     const r=spawnSync(command,{shell:true,cwd:root,encoding:'utf8',timeout:timeoutMs,maxBuffer:64*1024*1024});
     const out=(r.stdout||'')+'\n'+(r.stderr||'');

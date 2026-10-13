@@ -26,6 +26,21 @@
     "source": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
     "license": "MIT"
   },
+  "uiChange": {
+    "comment": "存量项目 UI 变更的绑定与检查。scopes 声明本次改动类型；styleGlobs 是样式层文件模式——UI 变更的证据若完全没绑定到这些模式，视觉改动不会被检出，run 会告警。affectedPrefixes 用于识别'改动落在既有界面目录'。",
+    "styleGlobs": [
+      "**/*.css", "**/*.scss", "**/*.sass", "**/*.less", "**/*.styl",
+      "**/*.stylus", "**/*.pcss", "**/*.postcss",
+      "**/tailwind.config.*", "**/postcss.config.*", "**/vite.config.*", "**/webpack.config.*",
+      "**/theme*.{js,ts,json,jsx,tsx}", "**/tokens*.{js,ts,json,jsx,tsx}",
+      "**/design-tokens*", "**/variables*.{css,scss,less}",
+      "**/*.module.{css,scss,less}", "**/styled-components/**", "**/emotion*"
+    ],
+    "styleWarnEnabled": true,
+    "styleWarnNote": "UI 变更（ui 节点有产物）时，若证据输入未匹配任何 styleGlobs，说明样式/主题改动不会被'证据过期'检出——run 会打印 WARN。多数情况下应把样式目录或主题文件加入任务 modules 或 --input。",
+    "declareBlock": "ui-scope",
+    "declareNote": "ui.md 中的 ui-scope 代码块是机器可读的界面声明（YAML 子集），把'用户确认的界面'与真实文件绑定：mode 为 new（新建）或 change（存量改造）；files 列出本次交付/改动的界面文件或目录；affected 列出受影响的既有界面（改造时必填）。check 会校验这些路径真实存在，并把 files 强制计入证据输入，使'确认的界面 ≠ 交付的界面'无法通过。"
+  },
   "nodes": [
     {
       "id": "clarify",
