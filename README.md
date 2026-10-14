@@ -175,3 +175,14 @@ node <runtime> --change add-rbac archive
 多会话并行时，每条命令都用 `--change <id>` 前缀固定目标；active 只是单会话操作的默认选择。各 change 的文档、状态、日志和证据独立，业务源码仍共享，修改同一源码需协调。旧版 `current` 与单份状态使用 `migrate` 迁移，保留历史并重新确认与验证；混有多个任务时先核对归属，不能自动拆分。
 
 进入 UI 阶段会先提示「使用 ui-ux-pro-max（推荐） / 使用 frontend-design / 跳过 UI」。用户选择后才记录 `ui-use <Skill名>` 或 `skip ui <原因>`，不会默认代选；续跑已有选择时直接沿用，原型完成后仍需验收确认。
+
+
+## 验收证据与文档质量
+
+PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。验证用例仍用 `REQ-NN-场景` 命名，在 `test-results.json` 中用 `acceptance` 数组逐条关联 AC，并注明 `method`（static/unit/integration/e2e/manual/build）。所有声明的 AC 都必须被已通过的必测用例覆盖；需求级覆盖不能替代逐条验收。未知 AC、重复用例 ID、未测的必测项阻断 verify/archive。没有 AC 的旧 PRD 保持原 REQ 校验。
+
+`run` 增加 `--reject <正则>` 作为失败输出断言，并记录真实 `exitCode`/`signal`。每个 `--expect` 是必须满足的条件，多项条件重复传参；`A|B|C` 只表示任选一项。直接传入 Bash 时自动启用并导出 errexit/pipefail，使嵌套 Bash 也传播失败；其他解释器、显式关闭选项或自定义失败处理仍需自行保证退出码。不要用打印计数或 echo OK 代替断言。
+
+独立原型和评审截图使用 `ui-scope.prototypes` 声明，文件保存到当前 change 内，参与 UI 确认指纹；改动后须重新确认。旧 ui.md 未声明 prototypes 时保持兼容，新版生成原型时须声明。证据报告区分静态检查、mock 单测、原型演示和真实页面/API/数据库测试，未测写 not_run。脚本核对声明、指纹和执行结果，仍不能判断测试是否忠实覆盖业务语义。
+
+基于 RBAC 旧产物的具体审查见 [文档产物审查报告](docs/reviews/2026-10-14-rbac-workflow-artifacts-review.md)。

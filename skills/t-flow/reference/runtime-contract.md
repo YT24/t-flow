@@ -4,3 +4,9 @@ ui.md 必须含 ui-scope 声明块（mode: new|change、files、affected），�
 并行会话每条命令必须显式加前缀 `--change <id>`（放在命令前），不能依赖共享 active。`resume <id>` 恢复选择并输出 NEXT/SKILL；`--change <id> status` 只查看指定状态，`changes`/`list` 展示阶段进度（含跳过阶段）、任务完成数和归档状态。状态和证据隔离不等于业务代码隔离；多个 change 修改相同源码时仍需协调，输入变化会使证据失效。
 
 UI 阶段未选择时 status/resume/advance 输出 UI_CHOICE，提示用户跳过或选择设计 Skill。ui-use 必须显式指定名称；未记录选择不得通过 UI 检查与确认。选择记录独立于原型验收；reopen UI 或前序节点清除选择，skip ui 清除所用 Skill。
+
+验收检查：PRD 中出现 AC-NN-N 时，各用例的 acceptance 数组必须逐条覆盖全部 AC，且用于覆盖的用例须 required:true/status:passed；声明 acceptance 的用例必须记录 method（static/unit/integration/e2e/manual/build），重复用例 ID 和未知 AC 会被拒绝。REQ 覆盖关闭不影响已声明的 AC 校验；没有 AC 的旧 PRD 保持原 REQ 检查。方法与覆盖关系由执行者声明，脚本不能证明测试语义正确。
+
+run 支持重复 --reject <正则>，任一命中即 failed；新证据记录 exitCode/signal。参数仍在执行前校验。Bash 命令自动启用 errexit/pipefail，SHELLOPTS 导出使嵌套 Bash 继承；显式关闭选项或使用其他解释器仍需调用者保证失败传播。--expect 多个条件应重复传参，正则中的 | 表示任选一个。
+
+ui-scope 可声明 prototypes 数组：路径须在本 change 内且是实际文件。原型和评审截图参与 UI 及后续节点的确认/完成指纹，也绑定到执行证据；修改原型需 reopen ui 并重新确认。未声明 prototypes 的旧 ui.md 保持兼容；新版产物生成独立原型时必须声明。

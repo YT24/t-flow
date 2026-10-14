@@ -13,6 +13,8 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 编写 design.md，明确接口、数据流、权限、数据迁移和测试策略。读取目标项目 AGENTS.md 并遵守其中约束。向用户展示技术设计（UI 原型已在 ui 门禁单独确认；若 ui 被 skip，说明无界面影响即可），确认后记录 approve design。小型变更（无架构调整、无数据迁移、无新接口）可不写 design.md：向用户说明理由，运行 yt.mjs skip design <原因> 记录后本节点直接完成。
 
 ### Completion reasoning
+展示设计前逐项对照 PRD/ADR/UI 的页面、接口、字段、权限和 AC；合并页面、改变授权或降低验证方式时，回退并同步受影响需求后重新确认。授权设计须覆盖不同写入口的字段级权限、可授予上限、角色查询与分配权限的一致性，以及事务/并发/回滚；未决业务规则返回 clarify，不能自行假定。逐 AC 标明测试层级，mock/无缓存代码检查不等同于同 token 真实请求验证。
+
 逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
 
 ### Red flags

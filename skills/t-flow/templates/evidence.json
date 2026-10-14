@@ -8,6 +8,10 @@
   "changeId": "example-change",
   "status": "passed",
   "command": "实际执行的命令",
+  "exitCode": 0,
+  "signal": null,
+  "expects": ["测试工具真实成功输出"],
+  "rejects": ["BUILD FAILURE"],
   "recordedAt": "实际执行时间",
   "inputs": {
     "相关源文件": "SHA256"

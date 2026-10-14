@@ -130,8 +130,13 @@ function state(){const cid=activeId();if(!cid)throw Error('未聚焦任何变更
 function save(s,action){if(action)s.history.push({action,at:new Date().toISOString()});s.updatedAt=new Date().toISOString();writeStateFile(s);}
 function node(id){const n=nodes.find(n=>n.id===id);if(!n)throw Error('未知节点 '+id);return n;}
 function files(n){return n.outputSchemas.flatMap(id=>{const schema=protocol.outputSchemas.find(x=>x.id===id);if(!schema)throw Error('缺少 schema '+id);return schema.artifacts.filter(a=>a.required).flatMap(a=>a.paths);});}
-function contentHash(p){return p.endsWith('/tasks.json')?sha(JSON.stringify(json(p).map(({status,evidence,...rest})=>rest))):sha(read(p));}
-function fingerprint(s,id){const end=nodes.findIndex(n=>n.id===id);const paths=[...new Set(nodes.slice(0,end+1).flatMap(files).map(p=>mapArt(s.changeId,p)))];return sha(JSON.stringify({changeId:s.changeId,protocol:s.protocolHash,files:paths.map(p=>[p,fs.existsSync(safe(p))?contentHash(p):null])}));}
+function contentHash(p){return p.endsWith('/tasks.json')?sha(JSON.stringify(json(p).map(({status,evidence,...rest})=>rest))):sha(fs.readFileSync(safe(p)));}
+function fingerprint(s,id){
+ const end=nodes.findIndex(n=>n.id===id),paths=nodes.slice(0,end+1).flatMap(files).map(p=>mapArt(s.changeId,p));
+ const ui=changeDocDir(s.changeId)+'/ui.md';
+ if(end>=nodes.findIndex(n=>n.id==='ui')&&!s.skipped?.ui&&fs.existsSync(safe(ui)))paths.push(...(parseUiScope(read(ui))?.prototypes||[]));
+ return sha(JSON.stringify({changeId:s.changeId,protocol:s.protocolHash,files:[...new Set(paths)].map(p=>[p,fs.existsSync(safe(p))?contentHash(p):null])}));
+}
 function tasks(){const t=json(docDir()+'/tasks.json');if(!Array.isArray(t)||!t.length)throw Error('tasks.json 必须是非空数组');const ids=new Set(t.map(x=>x.id));if(ids.size!==t.length)throw Error('任务 ID 重复');for(const x of t){if(!x.id||!x.title||!Array.isArray(x.dependsOn)||!Array.isArray(x.acceptance)||!x.acceptance.length||!['pending','in_progress','blocked','done'].includes(x.status))throw Error('任务字段不完整 '+x.id);
  // modules 必须是非空字符串数组：证据输入绑定依赖它，留空等于让"证据过期"失效（见 README 机制边界）。
  if(!Array.isArray(x.modules)||!x.modules.length||x.modules.some(m=>typeof m!=='string'||!m.trim()))throw Error('任务 '+x.id+' 的 modules 必须是非空路径数组（证据输入绑定依赖它）');
@@ -171,7 +176,7 @@ function validateEvidence(e,s,{path:evPath}={}){
  if(!e.log||!e.log.split(path.sep).join('/').startsWith(logsDir()+'/'))throw Error('证据日志必须位于 '+logsDir()+'/ 下');
  if(!read(e.log).trim())throw Error('缺少验证日志');
 }
-function testResult(s){const r=json(docDir()+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed'){
+function testResult(s){const r=json(docDir()+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');if(new Set(r.tests.map(t=>t.id)).size!==r.tests.length)throw Error('用例 ID 重复');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed'){
   // verify 用例必须由 verify 阶段自己执行：不得复用 execute 阶段的任务证据，
   // 否则"测试"可能从未作为测试运行过（历史缺陷）。
   // 判据是「被引用证据所属 id 的执行阶段」，且只看该 runId 那次执行，避免同一 id
@@ -185,15 +190,29 @@ function testResult(s){const r=json(docDir()+'/test-results.json');if(r.changeId
  }}if(!r.tests.some(t=>t.required))throw Error('没有定义必测项');coverage(r);return r;}
 // 需求覆盖：每个需求至少有一个通过的必测用例。
 function coverage(r){
- if(!REQ_COVERAGE)return;
- let re;try{re=new RegExp(REQ_PATTERN,'g');}catch(e){throw Error('requirementIdPattern 不是合法正则: '+REQ_PATTERN);}
- const prd=read(docDir()+'/prd.md'),reqs=new Set(prd.match(re)||[]);
- if(!reqs.size)throw Error('PRD 未包含任何需求编号（模式 '+REQ_PATTERN+'）：无法建立需求与测试的对应关系；若本项目不使用编号，请在 protocol config 置 requireCoverage:false');
- const ids=r.tests.filter(t=>t.required&&t.status==='passed').map(t=>String(t.id));
- // 按编号边界匹配：REQ-011 不应被当作覆盖 REQ-01（后缀须结束或接非数字分隔符）。
- const uncovered=[...reqs].filter(q=>!ids.some(id=>new RegExp('(^|[^0-9A-Za-z])'+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'($|[^0-9])').test(id)));
- if(uncovered.length)throw Error('以下需求缺少已通过的必测用例: '+uncovered.join(', ')+'（用例 id 须包含需求编号，如 '+[...reqs][0]+' 或 '+[...reqs][0]+'-场景）');
+ const prd=read(docDir()+'/prd.md');
+ if(REQ_COVERAGE){
+  let re;try{re=new RegExp(REQ_PATTERN,'g');}catch(e){throw Error('requirementIdPattern 不是合法正则: '+REQ_PATTERN);}
+  const reqs=new Set(prd.match(re)||[]);
+  if(!reqs.size)throw Error('PRD 未包含任何需求编号（模式 '+REQ_PATTERN+'）：无法建立需求与测试的对应关系；若本项目不使用编号，请在 protocol config 置 requireCoverage:false');
+  const ids=r.tests.filter(t=>t.required&&t.status==='passed').map(t=>String(t.id));
+  const uncovered=[...reqs].filter(q=>!ids.some(id=>new RegExp('(^|[^0-9A-Za-z])'+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'($|[^0-9])').test(id)));
+  if(uncovered.length)throw Error('以下需求缺少已通过的必测用例: '+uncovered.join(', ')+'（用例 id 须包含需求编号）');
+ }
+ // PRD 声明了逐条 AC 时，需求级通过不能替代验收标准通过。
+ const criteria=new Set(prd.match(/\bAC-\d+-\d+\b/g)||[]),covered=new Set();
+ for(const t of r.tests){
+  if(t.acceptance!==undefined&&(!Array.isArray(t.acceptance)||t.acceptance.some(a=>typeof a!=='string')))throw Error('用例 '+t.id+' 的 acceptance 必须是验收编号数组');
+  if(t.acceptance?.length&&!['static','unit','integration','e2e','manual','build'].includes(t.method))throw Error('用例 '+t.id+' 的 method 须明确验证方式（static/unit/integration/e2e/manual/build）');
+  for(const ac of t.acceptance||[]){
+   if(!criteria.has(ac))throw Error('用例 '+t.id+' 引用了未知验收标准 '+ac);
+   if(t.required&&t.status==='passed')covered.add(ac);
+  }
+ }
+ const missing=[...criteria].filter(ac=>!covered.has(ac));
+ if(missing.length)throw Error('以下验收标准缺少已通过的必测用例: '+missing.join(', ')+'（在用例 acceptance 中逐条列出；未测不能计为通过）');
 }
+
 function syncResult(s){const p=docDir()+'/spec-sync.json';if(!fs.existsSync(safe(p))){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}const r=json(p);if(r.changeId!==s.changeId||!Array.isArray(r.files))throw Error('Spec 同步证据非法');if(!r.files.length){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}for(const f of r.files){if(!f.source.startsWith(docDir()+'/')||!f.target.startsWith(SPEC_PREFIX))throw Error('Spec 路径不正确（目标须以 '+SPEC_PREFIX+' 开头）');if(sha(read(f.source))!==f.sourceHash||sha(read(f.target))!==f.targetHash)throw Error('Spec 同步证据过期');}if(r.reviewed!==true)throw Error('Spec 合并未核对');}
 function validate(s,id,{approval=true}={}){
  const n=node(id);for(const p of files(n).map(pp=>mapArt(s.changeId,pp))){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;if(!read(p).trim())throw Error('产物为空 '+p);}
@@ -219,7 +238,7 @@ function parseUiScope(text){
  const re=new RegExp('```'+UI_SCOPE_BLOCK+'\\s*\\n([\\s\\S]*?)```');
  const m=re.exec(text);
  if(!m)return null;
- const out={mode:null,files:[],affected:[]};
+ const out={mode:null,files:[],affected:[],prototypes:[]};
  for(const raw of m[1].split('\n')){
   const line=raw.trim();if(!line||line.startsWith('#'))continue;
   const kv=/^([A-Za-z_]+)\s*:\s*(.*)$/.exec(line);
@@ -229,6 +248,7 @@ function parseUiScope(text){
   if(k==='mode')out.mode=v.trim().replace(/^["']|["']$/g,'')||null;
   else if(k==='files')out.files.push(...list);
   else if(k==='affected')out.affected.push(...list);
+  else if(k==='prototypes')out.prototypes.push(...list);
  }
  return out;
 }
@@ -242,7 +262,8 @@ function uiScope(){
  }
  if(!['new','change'].includes(sc.mode))throw Error('ui-scope 的 mode 必须是 new 或 change（当前 '+(sc.mode||'<空>')+'）');
  if(!sc.files.length)throw Error('ui-scope 的 files 不能为空：至少列出本次交付/改动的界面文件或目录');
- const bad=sc.files.concat(sc.affected).filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
+ for(const p of sc.prototypes){if(!p.startsWith(docDir()+'/')||!fs.existsSync(safe(p))||!fs.statSync(safe(p)).isFile())throw Error('原型须为本 change 内真实文件: '+p);}
+ const bad=sc.files.concat(sc.affected,sc.prototypes).filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
  if(bad.length)throw Error('ui-scope 声明的路径不存在或非法: '+bad.join(', ')+'（须为项目内真实相对路径）');
  if(sc.mode==='change'&&!sc.affected.length)throw Error('ui-scope 的 mode=change（存量改造）时必须用 affected 列出受影响的既有界面，供用户评估影响面与回归范围');
  return sc;
@@ -416,11 +437,12 @@ try{
  if(CLI_CHANGE!==null)validId(CLI_CHANGE);
  if(['init','use','resume'].includes(cmd)&&CLI_CHANGE&&CLI_CHANGE!==arg)throw Error('--change 与目标 change 不一致');
  if(fs.existsSync(LEGACY_STATE)&&!['help','migrate','doctor','changes','list'].includes(cmd))throw Error('检测到旧布局，请先运行 migrate 迁移 current');
- if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
 证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
 证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
-断言：--expect <正则> 要求输出命中（可重复多次），--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。参数校验在命令执行前完成；固定证据路径记录最新结果，失败阻断推进；每次执行的证据与日志独立保留。
+断言：--expect <正则> 要求输出命中（可重复多次，各项都必须命中）；--reject <正则> 任一命中即失败。直接调用 Bash 时自动启用 errexit/pipefail 并让嵌套 Bash 继承，不能让管道或 echo 成功标记吞掉失败；其他解释器需自行保证退出码。--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。参数校验在命令执行前完成；固定证据路径记录最新结果，失败阻断推进；每次执行的证据与日志独立保留。
+验收覆盖：PRD 声明 AC-NN-N 时，test-results.json 用例须用 acceptance 逐条覆盖全部 AC，并记录 method 验证方式；未测/可选用例不计覆盖。重复用例 ID 和未知 AC 会被拒绝。
 需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 中已通过必测用例的 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后对每个未归档变更运行 --change <id> migrate。多 change：各变更独立目录 docs/t-flow/change/<id>/ 与状态，互不干扰、可并行推进；并行会话每条命令固定使用 --change <id> 前缀；init 新建、resume/use 选择继续目标、changes/list 查看进度和状态。
 UI 设计 Skill：主 ${UI_ROUTING?UI_ROUTING.primary:'ui-ux-pro-max'}，兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}（ui-routing 查看；ui-use <Skill名> 记录实际所用）。缺失时运行 ensure-skills 自动安装到项目 .agents/skills/ 并链接 .claude/skills/（Claude 与 agent 两条发现路径都可用）。
@@ -564,17 +586,23 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(!['execute','verify'].includes(s.currentNode))throw Error('只有 execute/verify 阶段可生成证据');
     if(!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,79}$/.test(arg||''))throw Error('evidence-id 使用字母数字和连字符');
     const rest=_argv.slice(2),sep=rest.indexOf('--');
-    if(sep<0||sep===rest.length-1)throw Error('用法: run <id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令>');
+    if(sep<0||sep===rest.length-1)throw Error('用法: run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令>');
     const flags=rest.slice(0,sep),cmdArgs=rest.slice(sep+1),extraInputs=[];
-    let timeoutMs=30*60*1000,expects=[],minOutput=0;
+    let timeoutMs=30*60*1000,expects=[],rejects=[],minOutput=0;
     for(let i=0;i<flags.length;i++){
      if(flags[i]==='--input'&&flags[i+1])extraInputs.push(flags[++i]);
      else if(flags[i]==='--expect'&&flags[i+1])expects.push(flags[++i]);
+     else if(flags[i]==='--reject'&&flags[i+1])rejects.push(flags[++i]);
      else if(flags[i]==='--min-output'&&flags[i+1]){const n=Number(flags[++i]);if(!Number.isSafeInteger(n)||n<0)throw Error('--min-output 需为非负数');minOutput=n;}
      else if(flags[i]==='--timeout'&&flags[i+1]){const sec=Number(flags[++i]);if(!Number.isFinite(sec)||!Number.isSafeInteger(sec*1000)||sec<=0)throw Error('--timeout 需为正数秒');timeoutMs=sec*1000;}
      else throw Error('无法识别的参数 '+flags[i]);
     }
     const patterns=expects.map(pat=>{try{return new RegExp(pat,'m');}catch(e){throw Error('--expect 不是合法正则: '+pat+' ('+e.message+')');}});
+    const rejectPatterns=rejects.map(pat=>{try{return new RegExp(pat,'m');}catch(e){throw Error('--reject 不是合法正则: '+pat+' ('+e.message+')');}});
+    // Bash 包装的测试必须传播管道和中间命令的失败，嵌套 Bash 通过导出的 SHELLOPTS 继承。
+    const bash=path.basename(cmdArgs[0])==='bash';
+    if(bash)cmdArgs.splice(1,0,'-e','-o','pipefail');
+    const runEnv=bash?{...process.env,SHELLOPTS:[...new Set([...(process.env.SHELLOPTS||'').split(':').filter(Boolean),'errexit','pipefail'])].join(':')}:process.env;
     const command=cmdArgs.map(shellQuote).join(' ');
     // 先算证据输入并校验，再执行命令：否则命令已产生副作用（写库、发请求、改文件）才因参数非法报错。
     const inputs=boundInputs(s,extraInputs),inputRoots=[...extraInputs];
@@ -592,8 +620,8 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     // files（本次交付）与 affected（受影响的既有界面）都要绑定——否则"用户在 ui 门禁里
     // 确认过的影响面"可以被绕过：改了一个已声明的受影响页面却检测不到。
     const sc=currentUiScope(s);
-    if(sc&&(sc.files.length||sc.affected.length)){
-     const declared=[...new Set([...sc.files,...sc.affected])];
+    if(sc&&(sc.files.length||sc.affected.length||sc.prototypes.length)){
+     const declared=[...new Set([...sc.files,...sc.affected,...sc.prototypes])];
      const bad=declared.filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
      if(bad.length)throw Error('ui-scope 声明的界面文件不存在: '+bad.join(', ')+'（ui.md 与磁盘不一致，请修正或 reopen ui）');
      for(const f of declared){for(const [rel,h]of expandInput(f))inputs[rel]=h;inputRoots.push(f);}
@@ -608,18 +636,20 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
      if(!styleBound.length)console.error('WARN: 本次为 UI 变更（ui.md 存在），但证据未绑定任何样式/主题文件。若本次涉及样式或 design token，请把样式目录或主题文件加入任务 modules 或 --input——否则视觉改动不会使证据过期。');
     }
     const directories=Object.fromEntries([...new Set(inputRoots)].filter(p=>fs.statSync(safe(p)).isDirectory()).map(p=>[p,expandInput(p).map(([rel])=>rel).sort()]));
-    const r=spawnSync(command,{shell:true,cwd:root,encoding:'utf8',timeout:timeoutMs,maxBuffer:64*1024*1024});
+    const r=spawnSync(cmdArgs[0],cmdArgs.slice(1),{cwd:root,env:runEnv,encoding:'utf8',timeout:timeoutMs,maxBuffer:64*1024*1024});
     const out=(r.stdout||'')+'\n'+(r.stderr||'');
     // 断言：退出码 0 且全部 --expect 模式命中、输出量达标，才算 passed。
     const unmet=expects.filter((pat,i)=>!patterns[i].test(out));
+    const rejected=rejects.filter((pat,i)=>rejectPatterns[i].test(out));
     const bodyLen=out.trim().length;
-    const ok=r.status===0&&!unmet.length&&bodyLen>=minOutput;
+    const ok=r.status===0&&!unmet.length&&!rejected.length&&bodyLen>=minOutput;
     const runId=crypto.randomUUID(),log=logsDir()+'/'+arg+'-'+runId+'.log';
     writeRaw(log,['$ '+command,'',r.stdout||'',r.stderr||'',r.error?'[error] '+r.error.message:'','[exit] '+(r.status===null?'signal '+(r.signal||'?'):r.status),
      expects.length?'[expect] '+expects.map(p=>p+' -> '+(unmet.includes(p)?'MISS':'HIT')).join('; '):'',
+     rejects.length?'[reject] '+rejects.map(p=>p+' -> '+(rejected.includes(p)?'HIT (failed)':'CLEAR')).join('; '):'',
      minOutput?'[min-output] '+minOutput+' (actual '+bodyLen+')':''].filter(Boolean).join('\n'));
-    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,recordedAt:new Date().toISOString(),inputs,log,
-     ...(expects.length?{expects}:{}),...(minOutput?{minOutput}:{})};
+    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,exitCode:r.status,signal:r.signal||null,...(bash?{shellOptions:['errexit','pipefail']}:{}),recordedAt:new Date().toISOString(),inputs,log,
+     ...(expects.length?{expects}:{}),...(rejects.length?{rejects}:{}),...(minOutput?{minOutput}:{})};
     const ep=evDir()+'/'+arg+'.json';
     // 每次执行保存独立记录；固定路径始终指向最新结果，包括失败。
     write(evDir()+'/attempts/'+arg+'/'+runId+'.json',ev);

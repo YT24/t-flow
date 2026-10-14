@@ -15,7 +15,7 @@ function fixture(t) {
  const put=(p,v)=>{fs.mkdirSync(path.dirname(path.join(root,p)),{recursive:true});fs.writeFileSync(path.join(root,p),typeof v==='string'?v:JSON.stringify(v));};
  const doc=(p,v,cid='test')=>put(`docs/t-flow/change/${cid}/`+p,v);
  const read=p=>JSON.parse(fs.readFileSync(path.join(root,p)));
- const setup=()=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?'REQ-01 behavior':'content');ok('approve','specify','confirmed');ok('advance');ok('skip','ui','no UI');ok('skip','design','small');doc('plan.md','plan');put('src/a.js','export const a=1;');doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);ok('advance');};
+ const setup=(prd='REQ-01 behavior')=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?prd:'content');ok('approve','specify','confirmed');ok('advance');ok('skip','ui','no UI');ok('skip','design','small');doc('plan.md','plan');put('src/a.js','export const a=1;');doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);ok('advance');};
  const pass=()=>{ok('run','T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');ok('task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');};
  // 走到 ui 节点（不 skip）
  const atUi=()=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?'REQ-01 behavior':'content');ok('approve','specify','confirmed');ok('advance');};
@@ -458,4 +458,79 @@ test('skipping a reopened UI ignores the old prototype scope during execution',t
  assert.doesNotMatch(r.out,/未绑定任何样式/);
  assert.ok(fs.existsSync(path.join(f.root,'docs/t-flow/change/test/ui.md')));
  assert.equal(f.read('docs/t-flow/change/test/evidence/T-01.json').inputs['src/App.vue'],undefined);
+});
+
+
+function acceptanceFixture(t){
+ const f=fixture(t);f.setup('REQ-01 behavior\nAC-01-1: first behavior\nAC-01-2: second behavior');f.pass();f.ok('advance');
+ f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');f.doc('test-report.md','report');
+ const result={changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',method:'unit',acceptance:['AC-01-1'],evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]};
+ return {f,result};
+}
+test('requirement coverage cannot substitute for individual acceptance coverage',t=>{
+ const {f,result}=acceptanceFixture(t);f.doc('test-results.json',result);
+ assert.match(f.run('check').out,/验收标准.*AC-01-2/);
+ result.tests[0].acceptance.push('AC-01-2');f.doc('test-results.json',result);f.ok('check');
+});
+test('optional unexecuted acceptance and unknown acceptance ids cannot satisfy coverage',t=>{
+ const {f,result}=acceptanceFixture(t);
+ result.tests.push({id:'manual',required:false,status:'not_run',method:'manual',acceptance:['AC-01-2']});f.doc('test-results.json',result);
+ assert.equal(f.run('check').code,1);
+ result.tests[0].acceptance.push('AC-99-1');f.doc('test-results.json',result);assert.match(f.run('check').out,/未知验收标准.*AC-99-1/);
+});
+test('duplicate test ids cannot inflate a verification report',t=>{
+ const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');result.tests.push({...result.tests[0]});f.doc('test-results.json',result);
+ assert.match(f.run('check').out,/用例 ID 重复/);
+});
+test('bash verification preserves a failed pipeline status despite a success marker',t=>{
+ const f=fixture(t);f.setup();
+ const r=f.run('run','T-01','--expect','PASS','--','bash','-c','false | cat; printf "PASS\\n"');
+ assert.equal(r.code,1);assert.equal(f.read('docs/t-flow/change/test/evidence/T-01.json').status,'failed');
+});
+test('negative assertions reject failure output even if success output and exit code pass',t=>{
+ const f=fixture(t);f.setup();
+ const r=f.run('run','T-01','--expect','PASS','--reject','BUILD FAILURE','--',process.execPath,'-e','console.log("PASS\\nBUILD FAILURE")');
+ assert.equal(r.code,1);
+ const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.equal(ev.status,'failed');assert.deepEqual(ev.rejects,['BUILD FAILURE']);assert.equal(ev.exitCode,0);
+ f.ok('run','T-01','--expect','PASS','--reject','BUILD FAILURE','--',process.execPath,'-e','console.log("PASS")');
+ const bad=f.run('run','T-01','--reject','[','--',process.execPath,'-e','require("fs").writeFileSync("side-effect","yes")');
+ assert.equal(bad.code,1);assert.equal(fs.existsSync(path.join(f.root,'side-effect')),false);
+});
+test('reviewed prototypes participate in UI approval fingerprints',t=>{
+ const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');f.uiMd();
+ f.doc('prototype.html','<html>approved prototype</html>');
+ const ui=fs.readFileSync(path.join(f.root,'docs/t-flow/change/test/ui.md'),'utf8').replace('mode: new','mode: new\nprototypes: [docs/t-flow/change/test/prototype.html]');f.doc('ui.md',ui);
+ f.ok('approve','ui','confirmed');f.doc('prototype.html','<html>changed prototype</html>');
+ assert.equal(f.run('advance').code,1);
+ f.doc('prototype.html','<html>approved prototype</html>');f.ok('advance');
+});
+test('reviewed prototypes must be real files in the selected change',t=>{
+ const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');f.uiMd();
+ const ui=fs.readFileSync(path.join(f.root,'docs/t-flow/change/test/ui.md'),'utf8').replace('mode: new','mode: new\nprototypes: [docs/t-flow/change/other/prototype.html]');f.doc('ui.md',ui);f.put('docs/t-flow/change/other/prototype.html','other');
+ assert.match(f.run('check').out,/原型.*本 change/);
+});
+
+test('nested bash commands also preserve failing pipeline status',t=>{
+ const f=fixture(t);f.setup();
+ const r=f.run('run','T-01','--expect','PASS','--','bash','-c',"bash -c 'false | cat; echo PASS'");assert.equal(r.code,1);
+});
+
+
+test('acceptance coverage records the verification method explicitly',t=>{
+ const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');delete result.tests[0].method;f.doc('test-results.json',result);
+ assert.match(f.run('check').out,/method.*验证方式/);result.tests[0].method='unit';f.doc('test-results.json',result);f.ok('check');
+});
+
+test('execution evidence binds reviewed HTML and binary screenshots and rejects stale reuse',t=>{
+ const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');f.uiMd();
+ const html='docs/t-flow/change/test/prototype.html',png='docs/t-flow/change/test/screenshot.png';
+ f.doc('prototype.html','<html>approved</html>');fs.writeFileSync(path.join(f.root,png),Buffer.from([255,254,0,128]));
+ const ui=fs.readFileSync(path.join(f.root,'docs/t-flow/change/test/ui.md'),'utf8').replace('mode: new',`mode: new\nprototypes: [${html}, ${png}]`);f.doc('ui.md',ui);
+ f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');f.doc('plan.md','plan');
+ f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/App.vue'],acceptance:['works'],status:'pending'}]);f.ok('advance');f.pass();
+ const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.ok(ev.inputs[html]);assert.ok(ev.inputs[png]);
+ fs.writeFileSync(path.join(f.root,png),Buffer.from([255,253,0,128]));
+ f.ok('reopen','ui');f.ok('ui-use','ui-ux-pro-max');f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');f.ok('advance');
+ assert.match(f.run('check').out,/验证证据过期.*screenshot/);
+ f.pass();f.ok('check');
 });

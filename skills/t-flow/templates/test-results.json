@@ -1,10 +1,12 @@
 {
-  "_说明": "每个 prd.md 里的需求编号（默认 REQ-NN）都必须有 required:true 且 passed 的对应用例：用例 id 须包含该编号（如 REQ-01-登录成功）。脚本强制校验覆盖，缺项会阻断 verify。",
+  "_说明": "每个 REQ 须有通过的必测用例；PRD 声明 AC-NN-N 时，acceptance 必须逐条覆盖全部 AC。声明 acceptance 的用例须记录 method（static/unit/integration/e2e/manual/build）。可选或未测用例不满足覆盖，缺项阻断 verify/archive。",
   "changeId": "example-change",
   "tests": [
     {
       "id": "REQ-01",
       "required": true,
+      "method": "integration",
+      "acceptance": ["AC-01-1"],
       "status": "not_run",
       "evidence": "docs/t-flow/change/<change-id>/evidence/REQ-01.json"
     }

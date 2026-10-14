@@ -46,13 +46,16 @@ python3 <skill目录>/scripts/search.py "chip badge overflow nowrap" --stack htm
 mode: change                                                     # new（新建界面）| change（存量项目改造既有界面）
 files: [src/pages/OrderList.vue]                                 # 本次交付/改动的界面文件或目录，必须真实存在
 affected: [src/pages/OrderDetail.vue, src/styles/theme.css]      # mode: change 时必填：受影响的既有界面与样式
+prototypes: [docs/t-flow/change/<change-id>/prototype.html]      # 已展示的真实原型文件，须在本 change 内
 ```
 
 - `files` 与 `affected` 都会被**强制计入证据输入**：改动其中任一文件都会使证据过期，无法出现"确认的是 A、交付的是 B"
 - `affected` 不是可有可无的清单：存量改造时它就是**影响面与回归范围**，用户正是在这一步确认"这改动会不会波及其他页面"
+- 生成独立原型时把已展示的 HTML 与评审用截图加入 `prototypes`，截图保存到本 change 的 screenshots/。这些文件参与 UI 确认指纹，修改后必须重新确认；没有独立原型时明确说明评审对象并写空数组。`files` 列实现范围，不能用它替代原型绑定。
 - 路径不存在、`mode` 非法、`change` 却漏填 `affected`，`check` 都会直接阻断
 
 另外记录：所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**。
+逐状态说明测试对象是原型还是实际页面，以及角色、步骤、断言和证据。静态截图不证明弹窗提交、树勾选保存、直接 URL 拒绝或后端授权；未执行的交互写未测，不能扩大“已实测”的结论。页面/路由/权限点须与已确认 PRD 一致，合并页面需同步需求并重新确认。
 
 **存量项目（mode: change）额外注意**：若本次改动涉及样式/主题/design token，务必把样式文件列入 `files` 或 `affected`。`run` 在 UI 变更未绑定任何样式文件时会告警——因为视觉改动若不在证据输入里，就不会触发"证据过期"，等于没人复核过新界面。
 
