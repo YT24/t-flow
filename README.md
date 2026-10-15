@@ -186,3 +186,20 @@ PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。验证用例仍用 `
 独立原型和评审截图使用 `ui-scope.prototypes` 声明，文件保存到当前 change 内，参与 UI 确认指纹；改动后须重新确认。旧 ui.md 未声明 prototypes 时保持兼容，新版生成原型时须声明。证据报告区分静态检查、mock 单测、原型演示和真实页面/API/数据库测试，未测写 not_run。脚本核对声明、指纹和执行结果，仍不能判断测试是否忠实覆盖业务语义。
 
 基于 RBAC 旧产物的具体审查见 [文档产物审查报告](docs/reviews/2026-10-14-rbac-workflow-artifacts-review.md)。
+
+### 查看所有 change 的状态与恢复中断
+
+```bash
+node skills/t-flow/scripts/yt.mjs status --all
+node skills/t-flow/scripts/yt.mjs status --all --json
+node skills/t-flow/scripts/yt.mjs --change <change-id> status
+node skills/t-flow/scripts/yt.mjs --change <change-id> archive
+```
+
+`changes` 和 `list` 同样提供全部 change 的状态列表（包括已归档）。列表包含阶段、总体完成数、任务完成数、当前阶段进度、状态、下一步、阻塞原因和更新时间；查询不改变当前选择。文档阶段显示必需非空产物数量，执行阶段显示已完成任务数，验证阶段显示必测项中已声明通过的数量。它们是数量进度，不代表实际工作量；状态会另行校验过期证据和用户确认，满额但校验失败仍显示阻塞。
+
+同一 change 的修改命令互斥，不同 change 可并行。锁覆盖长时间运行的测试命令，正常结束和报错均释放。强制终止或断电后可能留下 `.t-flow/runs/t-flow/<id>/write.lock`：先核对其中主机/PID 及其子进程已停止，再手工删除该锁并继续；不能因为等待时间长就删除。锁不会隔离共享源码或阻止编辑器直接写文件。
+
+归档中断后重复执行指定 change 的 `archive` 即可恢复，复制文件经摘要核对后才保存状态、清理源目录，已完成归档可安全重试。恢复信息保存在 `archive-pending.json`；恢复期间其他修改命令被阻断。若发现源文件变化或目标冲突，保留现场供核对，不自动覆盖。归档不修改共享 active 指针，以免与其他会话切换目标发生竞争；用 `resume <id>` 选择下一项。
+
+新执行证据保存日志 SHA256，并与独立执行记录完整比对。修改日志或仅修改固定证据文件会阻断验收。尚未归档的旧证据若缺少日志摘要，需要重新执行验证命令；已归档历史保持原样。这些检查用于检测不一致，不是防恶意篡改的数字签名。

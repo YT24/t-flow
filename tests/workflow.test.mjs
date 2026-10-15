@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 
 function fixture(t) {
  const base=fs.mkdtempSync(path.join(os.tmpdir(),'sy-workflow-test-'));
@@ -533,4 +533,91 @@ test('execution evidence binds reviewed HTML and binary screenshots and rejects 
  f.ok('reopen','ui');f.ok('ui-use','ui-ux-pro-max');f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');f.ok('advance');
  assert.match(f.run('check').out,/验证证据过期.*screenshot/);
  f.pass();f.ok('check');
+});
+
+for(const tamper of ['record','log'])test('integrity rejects modified '+tamper,t=>{
+ const f=fixture(t);f.setup();f.pass();const ep='docs/t-flow/change/test/evidence/T-01.json',ev=f.read(ep);
+ if(tamper==='record'){ev.command='different command';f.put(ep,ev);}else f.put(ev.log,'changed log');
+ assert.equal(f.run('check').code,1);
+});
+test('status all reports stage progress and waiting approval without changing active',t=>{
+ const f=fixture(t);f.setup();f.ok('init','other');f.doc('clarify-log.md','scope','other');
+ const result=f.ok('status','--all','--json');const rows=JSON.parse(result.out);
+ assert.equal(rows.find(r=>r.changeId==='test').stage,'execute');
+ assert.equal(rows.find(r=>r.changeId==='test').stageProgress.done,0);
+ assert.equal(rows.find(r=>r.changeId==='test').stageProgress.total,1);
+ assert.equal(rows.find(r=>r.changeId==='other').status,'waiting_approval');
+ assert.equal(fs.readFileSync(path.join(f.root,'.t-flow/runs/t-flow/active'),'utf8').trim(),'other');
+});
+test('change lock rejects concurrent mutations but permits reads and other changes',t=>{
+ const f=fixture(t);f.setup();f.put('.t-flow/runs/t-flow/test/write.lock',{pid:process.pid,host:os.hostname()});
+ assert.equal(f.run('--change','test','task','T-01','in_progress').code,1);
+ f.ok('--change','test','status');f.ok('init','other');
+});
+
+function archiveFixture(t){
+ const f=fixture(t),pp=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json');
+ const proto=JSON.parse(fs.readFileSync(pp));proto.config.specSyncRequired=false;fs.writeFileSync(pp,JSON.stringify(proto));
+ f.setup();f.pass();f.ok('advance');f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.doc('test-report.md','report');f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});f.ok('advance');f.doc('archive-report.md','accepted');f.ok('approve','archive','accepted');return f;
+}
+for(const point of ['copy','publish','state'])test('archive resumes interruption after '+point,t=>{
+ const f=archiveFixture(t),hook=path.join(f.base,'interrupt.cjs');
+ fs.writeFileSync(hook,`const fs=require('fs');const orig=fs.${point==='copy'?'cpSync':'renameSync'};fs.${point==='copy'?'cpSync':'renameSync'}=function(a,b,...rest){const result=orig.call(this,a,b,...rest);if(${point==='copy'?"String(b).includes('archive')":point==='publish'?"String(b).endsWith('/archive/test')":"String(b).endsWith('/test/state.json') && JSON.parse(fs.readFileSync(b)).currentNode===null"})throw Error('simulated interruption');return result;};`);
+ const r=spawnSync(process.execPath,['--require',hook,path.join(f.base,'skills/t-flow/scripts/yt.mjs'),'archive'],{cwd:f.root,encoding:'utf8',env:{...process.env,TFLOW_RUN_ROOT:f.root}});
+ assert.equal(r.status,1);assert.match(r.stderr,/simulated interruption/);
+ f.ok('archive');assert.equal(f.read('.t-flow/runs/t-flow/test/state.json').currentNode,null);
+ assert.equal(fs.existsSync(path.join(f.root,'docs/t-flow/change/test')),false);
+ assert.equal(f.read('docs/t-flow/archive/test/workflow-state.json').currentNode,null);
+ f.ok('--change','test','archive'); // 已完成的归档重试不产生重复记录
+ assert.equal(f.read('.t-flow/runs/t-flow/test/state.json').history.filter(h=>h.action==='archive').length,1);
+});
+
+test('real overlapping commands cannot overwrite a running change',async t=>{
+ const f=fixture(t);f.setup();
+ const child=spawn(process.execPath,[path.join(f.base,'skills/t-flow/scripts/yt.mjs'),'--change','test','run','T-01','--',process.execPath,'-e','require("fs").writeFileSync("started","yes");setTimeout(()=>console.log("PASS"),1500)'],{cwd:f.root,env:{...process.env,TFLOW_RUN_ROOT:f.root},stdio:'ignore'});
+ const completed=new Promise(resolve=>child.on('exit',resolve));
+ try{
+  const deadline=Date.now()+5000;
+  while(!fs.existsSync(path.join(f.root,'started'))&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.ok(fs.existsSync(path.join(f.root,'started')));
+  assert.equal(f.run('--change','test','reopen','plan').code,1);
+  const rows=JSON.parse(f.ok('status','--all','--json').out);assert.equal(rows[0].status,'running');
+  f.ok('init','other');assert.equal(await completed,0);
+  assert.equal(f.read('.t-flow/runs/t-flow/test/state.json').currentNode,'execute');
+  f.ok('--change','test','task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');
+ }finally{await completed;}
+});
+test('archive recovery preserves changed source instead of deleting it',t=>{
+ const f=archiveFixture(t),hook=path.join(f.base,'interrupt.cjs');
+ fs.writeFileSync(hook,`const fs=require('fs'),orig=fs.cpSync;fs.cpSync=function(...args){orig(...args);throw Error('interrupt');};`);
+ const r=spawnSync(process.execPath,['--require',hook,path.join(f.base,'skills/t-flow/scripts/yt.mjs'),'archive'],{cwd:f.root,env:{...process.env,TFLOW_RUN_ROOT:f.root}});assert.equal(r.status,1);
+ f.doc('extra.txt','new content');assert.equal(f.run('archive').code,1);
+ assert.equal(fs.readFileSync(path.join(f.root,'docs/t-flow/change/test/extra.txt'),'utf8'),'new content');
+ assert.equal(f.run('reopen','plan').code,1);
+});
+
+test('archive resumes cleanup interrupted after source removal',t=>{
+ const f=archiveFixture(t),hook=path.join(f.base,'interrupt.cjs');
+ fs.writeFileSync(hook,`const fs=require('fs'),orig=fs.rmSync;fs.rmSync=function(p,...args){const result=orig(p,...args);if(String(p).endsWith('/change/test'))throw Error('cleanup interrupted');return result;};`);
+ const r=spawnSync(process.execPath,['--require',hook,path.join(f.base,'skills/t-flow/scripts/yt.mjs'),'archive'],{cwd:f.root,env:{...process.env,TFLOW_RUN_ROOT:f.root}});assert.equal(r.status,1);
+ assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'archive_pending');
+ f.ok('--change','test','archive');assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'archived');
+ assert.equal(fs.existsSync(path.join(f.root,'.t-flow/runs/t-flow/test/archive-pending.json')),false);
+});
+test('verification progress never treats stale evidence as ready',t=>{
+ const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');f.doc('test-results.json',result);
+ let row=JSON.parse(f.ok('changes','--json').out)[0];assert.equal(row.status,'ready');assert.deepEqual(row.stageProgress,{kind:'required_tests',done:1,total:1});
+ f.put('src/a.js','changed');row=JSON.parse(f.ok('changes','--json').out)[0];assert.equal(row.status,'blocked');assert.match(row.reason,/证据过期/);
+});
+test('old evidence without a log digest requires rerun',t=>{
+ const f=fixture(t);f.setup();f.pass();const ep='docs/t-flow/change/test/evidence/T-01.json',ev=f.read(ep);delete ev.logHash;
+ f.put(ep,ev);f.put('docs/t-flow/change/test/evidence/attempts/T-01/'+ev.runId+'.json',ev);
+ assert.match(f.run('check').out,/旧证据缺少日志摘要/);
+ f.pass();f.ok('check');
+});
+test('status distinguishes an abandoned lock from a running command',t=>{
+ const f=fixture(t);f.setup();f.put('.t-flow/runs/t-flow/test/write.lock',{pid:2147483647,host:os.hostname()});
+ assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'locked');
+ assert.equal(f.run('reopen','plan').code,1);
 });

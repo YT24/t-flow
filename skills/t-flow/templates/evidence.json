@@ -16,5 +16,6 @@
   "inputs": {
     "相关源文件": "SHA256"
   },
-  "log": "docs/t-flow/change/<change-id>/logs/example-<runId>.log"
+  "log": "docs/t-flow/change/<change-id>/logs/example-<runId>.log",
+  "logHash": "run 自动生成的日志原始字节 SHA256"
 }

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const root=path.resolve(process.env.TFLOW_RUN_ROOT || process.cwd());
@@ -77,8 +78,15 @@ function activeId(){
  return null;
 }
 function setActive(cid){ACTIVE=validId(cid);writeRaw(path.relative(root,ACTIVE_FILE),cid+'\n');}
-function clearActive(){ACTIVE=null;try{fs.rmSync(ACTIVE_FILE);}catch{}}
 function stateFileOf(cid){return safe(path.relative(root,RUNS_DIR)+'/'+validId(cid)+'/state.json');}
+// 原子创建锁文件覆盖整个读-改-写过程，包括长时间运行的验证命令。
+function lockChange(cid){
+ const lock=path.dirname(stateFileOf(cid))+'/write.lock';
+ fs.mkdirSync(path.dirname(lock),{recursive:true});
+ let fd;try{fd=fs.openSync(lock,'wx');}catch(e){if(e.code!=='EEXIST')throw e;throw Error('change '+cid+' 已锁定；等待执行结束。若进程已退出，核对 '+lock+' 中的主机和 PID 后清理遗留锁');}
+ fs.writeFileSync(fd,JSON.stringify({pid:process.pid,host:os.hostname(),command:cmd,at:new Date().toISOString()}));fs.closeSync(fd);
+ process.on('exit',()=>{try{fs.unlinkSync(lock);}catch{}});
+}
 function readState(cid){
  const f=stateFileOf(cid);
  if(!fs.existsSync(f))throw Error('变更 '+cid+' 不存在（changes 查看列表，init <id> 新建）');
@@ -166,7 +174,6 @@ function validateEvidence(e,s,{path:evPath}={}){
  const ap=evDir()+'/attempts/'+e.id+'/'+e.runId+'.json';
  if(!fs.existsSync(safe(ap)))throw Error('缺少该证据的执行记录 '+ap+'：证据须由 run '+e.id+' 真实生成，不能复制或手写');
  let stored;try{stored=json(ap);}catch(err){throw Error('执行记录损坏 '+ap+': '+err.message);}
- if(stored.runId!==e.runId||stored.id!==e.id)throw Error('执行记录与证据不匹配: '+ap);
  if(json(evDir()+'/'+e.id+'.json').runId!==e.runId)throw Error('验证证据不是最新执行结果');
  if(e.changeId!==s.changeId||e.status!=='passed'||!e.command||!e.recordedAt||!e.inputs||!Object.keys(e.inputs).length)throw Error('验证证据字段缺失或未通过');
  for(const [p,entries]of Object.entries(e.directories||{})){
@@ -174,7 +181,10 @@ function validateEvidence(e,s,{path:evPath}={}){
  }
  for(const [p,h]of Object.entries(e.inputs)){if(sha(fs.readFileSync(safe(p)))!==h)throw Error('验证证据过期: '+p);}
  if(!e.log||!e.log.split(path.sep).join('/').startsWith(logsDir()+'/'))throw Error('证据日志必须位于 '+logsDir()+'/ 下');
+ if(!isDeepStrictEqual(stored,e))throw Error('执行记录与证据不匹配: '+ap);
  if(!read(e.log).trim())throw Error('缺少验证日志');
+ if(!e.logHash)throw Error('旧证据缺少日志摘要，请重新 run '+e.id);
+ if(sha(fs.readFileSync(safe(e.log)))!==e.logHash)throw Error('验证日志已变化: '+e.log);
 }
 function testResult(s){const r=json(docDir()+'/test-results.json');if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');if(new Set(r.tests.map(t=>t.id)).size!==r.tests.length)throw Error('用例 ID 重复');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed'){
   // verify 用例必须由 verify 阶段自己执行：不得复用 execute 阶段的任务证据，
@@ -270,8 +280,99 @@ function uiScope(){
 }
 // 读取当前变更的 ui-scope（供 run 强制计入证据输入）。
 function currentUiScope(s){if(s.skipped?.ui)return null;try{return fs.existsSync(safe(docDir()+'/ui.md'))?parseUiScope(read(docDir()+'/ui.md')):null;}catch{return null;}}
+function archiveJournal(cid){return path.relative(root,path.dirname(stateFileOf(cid))+'/archive-pending.json');}
+function treeManifest(dir){
+ const result={};
+ function walk(rel){for(const entry of fs.readdirSync(safe(rel),{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){
+  const p=rel+'/'+entry.name;
+  if(entry.isSymbolicLink())throw Error('归档不允许符号链接: '+p);
+  if(entry.isDirectory())walk(p);else if(entry.isFile())result[p.slice(dir.length+1)]=sha(fs.readFileSync(safe(p)));else throw Error('不支持的归档文件: '+p);
+ }}
+ walk(dir);return result;
+}
+function archiveChange(s){
+ const source=changeDocDir(s.changeId),destination=DOC_BASE+'/archive/'+s.changeId,jp=archiveJournal(s.changeId),stage=destination+'.pending';
+ if(!fs.existsSync(safe(jp))){
+  if(!s.currentNode){if(s.archivePath!==destination||!fs.existsSync(safe(destination+'/workflow-state.json')))throw Error('归档状态不完整，请 doctor');print(s);return;}
+  if(s.currentNode!=='archive')throw Error('当前不是归档阶段');
+  drift(s);validate(s,'archive');
+  if(fs.existsSync(safe(destination))||fs.existsSync(safe(stage)))throw Error('归档目录已存在');
+  const manifest=treeManifest(source);
+  if(Object.hasOwn(manifest,'workflow-state.json'))throw Error('workflow-state.json 为归档保留文件名');
+  const finalState=structuredClone(s);finalState.completedNodes.push('archive');finalState.completedHashes.archive=fingerprint(s,'archive');finalState.currentNode=null;finalState.archivePath=destination;
+  finalState.updatedAt=new Date().toISOString();finalState.history.push({action:'archive',at:finalState.updatedAt});
+  write(jp,{changeId:s.changeId,manifest,initialState:s,finalState});
+ }
+ const journal=json(jp);
+ if(journal.changeId!==s.changeId||journal.finalState?.archivePath!==destination)throw Error('归档恢复记录不匹配');
+ if(s.currentNode){
+  if(!isDeepStrictEqual(s,journal.initialState))throw Error('归档开始后状态发生变化');
+  drift(s);validate(s,'archive');
+  if(!isDeepStrictEqual(treeManifest(source),journal.manifest))throw Error('归档开始后源文件发生变化，保留现场供核对');
+ }else if(!isDeepStrictEqual(s,journal.finalState))throw Error('归档完成状态与恢复记录不一致');
+ if(!fs.existsSync(safe(destination))){
+  if(!s.currentNode)throw Error('已归档目录缺失');
+  fs.mkdirSync(path.dirname(safe(destination)),{recursive:true});
+  if(fs.existsSync(safe(stage)))fs.rmSync(safe(stage),{recursive:true});
+  fs.cpSync(safe(source),safe(stage),{recursive:true,errorOnExist:true,force:false});
+  if(!isDeepStrictEqual(treeManifest(stage),journal.manifest))throw Error('归档复制校验失败');
+  fs.renameSync(safe(stage),safe(destination));
+ }
+ const actual=treeManifest(destination);delete actual['workflow-state.json'];
+ if(!isDeepStrictEqual(actual,journal.manifest))throw Error('归档文件与恢复记录不一致，保留源目录');
+ write(destination+'/workflow-state.json',journal.finalState);
+ writeStateFile(journal.finalState);
+ if(fs.existsSync(safe(source))){
+  const remaining=treeManifest(source);
+  if(Object.entries(remaining).some(([p,h])=>journal.manifest[p]!==h))throw Error('归档源目录已变化，停止清理');
+  fs.rmSync(safe(source),{recursive:true});
+ }
+ // active 只是默认选择；保留指针避免与其他会话 use/init 的写入竞争。
+ fs.unlinkSync(safe(jp));print(journal.finalState);
+}
+function changeSummary(cid){
+ const previous=CLI_CHANGE;CLI_CHANGE=cid;
+ try{
+  const s=readState(cid),base=s.currentNode?changeDocDir(cid):s.archivePath;
+  const ts=fs.existsSync(safe(base+'/tasks.json'))?json(base+'/tasks.json'):[];
+  const row={changeId:cid,stage:s.currentNode||'archived',status:s.currentNode?'in_progress':'archived',
+   progress:{done:new Set([...s.completedNodes,...Object.keys(s.skipped||{})]).size,total:nodes.length},
+   tasks:{done:ts.filter(t=>t.status==='done').length,total:ts.length,blocked:ts.filter(t=>t.status==='blocked').length},
+   stageProgress:{kind:'artifacts',done:0,total:0},reason:'',next:s.currentNode?'继续 '+s.currentNode:'已完成',updatedAt:s.updatedAt};
+  if(!s.currentNode){row.stageProgress={kind:'archive',done:1,total:1};if(fs.existsSync(safe(archiveJournal(cid)))){row.status='archive_pending';row.next='archive（恢复清理）';}return row;}
+  const required=files(node(s.currentNode)).map(p=>mapArt(cid,p)).filter(p=>SPEC_REQUIRED||!p.endsWith('/spec-sync.json'));
+  row.stageProgress={kind:'artifacts',done:required.filter(p=>fs.existsSync(safe(p))&&read(p).trim()).length,total:required.length};
+  if(s.currentNode==='execute')row.stageProgress={kind:'tasks',done:row.tasks.done,total:row.tasks.total};
+  if(s.currentNode==='verify'){
+   const rp=base+'/test-results.json',tests=fs.existsSync(safe(rp))?json(rp).tests.filter(t=>t.required):[];
+   row.stageProgress={kind:'required_tests',done:tests.filter(t=>t.status==='passed').length,total:tests.length};
+  }
+  try{drift(s);validate(s,s.currentNode,{approval:false});
+   row.status=APPROVAL_NODES.includes(s.currentNode)&&s.approvals[s.currentNode]?.fingerprint!==fingerprint(s,s.currentNode)?'waiting_approval':'ready';
+   row.next=row.status==='waiting_approval'?'等待用户确认':s.currentNode==='archive'?'archive':'advance';
+  }catch(e){row.reason=e.message;row.status='blocked';row.next='修复阻塞后 check';}
+  if(fs.existsSync(path.dirname(stateFileOf(cid))+'/archive-pending.json')){row.status='archive_pending';row.next='archive（恢复归档）';}
+  if(fs.existsSync(path.dirname(stateFileOf(cid))+'/write.lock')){
+   row.status='locked';row.next='核对锁中主机/PID及子进程，确认停止后清理遗留锁';
+   try{row.lock=JSON.parse(fs.readFileSync(path.dirname(stateFileOf(cid))+'/write.lock','utf8'));
+    if(row.lock.host===os.hostname()&&Number.isInteger(row.lock.pid)&&row.lock.pid>0){process.kill(row.lock.pid,0);row.status='running';row.next='等待正在执行的命令结束';}
+   }catch{}
+  }
+  return row;
+ }catch(e){return {changeId:cid,status:'invalid',stage:'?',reason:e.message,next:'doctor',stageProgress:{done:0,total:0},progress:{done:0,total:nodes.length},tasks:{done:0,total:0}};}
+ finally{CLI_CHANGE=previous;}
+}
+function listChanges(){
+ const rows=changeIds().sort().map(changeSummary);
+ if(_argv.includes('--json')){console.log(JSON.stringify(rows,null,2));return;}
+ const labels={in_progress:'进行中',archived:'已归档',waiting_approval:'待确认',ready:'可推进',blocked:'阻塞',running:'执行中',locked:'锁待核对',archive_pending:'归档待恢复',invalid:'状态异常'};
+ console.log('change\t阶段\t总进度\t任务\t阶段进度\t状态\t下一步\t原因\t更新时间');
+ for(const r of rows)console.log([r.changeId,r.stage==='archived'?'已归档':r.stage,r.progress.done+'/'+r.progress.total,r.tasks.done+'/'+r.tasks.total,r.stageProgress.done+'/'+r.stageProgress.total+' '+(r.stageProgress.kind||''),labels[r.status],r.next,r.reason,r.updatedAt||'-'].join('\t'));
+ if(!rows.length)console.log('(无 change；init <change-id> 新建)');
+}
 function print(s){
  console.log(JSON.stringify(s,null,2));
+ if(cmd==='status')console.log('SUMMARY: '+JSON.stringify(changeSummary(s.changeId)));
  if(!s.currentNode){console.log('NEXT: done');return;}
  console.log('NEXT: '+s.currentNode+(APPROVAL_NODES.includes(s.currentNode)?'（用户确认门禁，approve 记录确认原文后才能 advance）':''));
  console.log('SKILL: t-flow-'+s.currentNode);
@@ -399,6 +500,8 @@ function doctor(){
   const tag='['+cid+'] ';
   let s=null;try{s=JSON.parse(fs.readFileSync(stateFileOf(cid),'utf8'));}catch(e){problems.push(tag+'状态损坏: '+e.message+'；人工修复或删除 '+stateFileOf(cid));}
   if(!s)continue;
+  if(fs.existsSync(safe(archiveJournal(cid))))problems.push(tag+'归档待恢复：--change '+cid+' archive');
+  if(fs.existsSync(path.dirname(stateFileOf(cid))+'/write.lock'))problems.push(tag+'存在写入锁：等待命令结束，异常退出后核对主机/PID及子进程再清理遗留锁');
   const hashOk=s.workflow===protocol.name&&s.protocolHash===protocolHash();
   if(s.workflow!==protocol.name)problems.push(tag+'state.workflow ('+s.workflow+') 与协议 ('+protocol.name+') 不一致');
   if(s.protocolHash!==protocolHash())problems.push(tag+'protocolHash 不匹配：运行 yt.mjs --change '+cid+' migrate 迁移');
@@ -435,9 +538,13 @@ function doctor(){
 }
 try{
  if(CLI_CHANGE!==null)validId(CLI_CHANGE);
+ if(['init','approve','decide','skip','advance','task','run','ui-use','reopen','migrate','archive'].includes(cmd)){
+  const cid=cmd==='init'?arg:cmd==='migrate'&&fs.existsSync(LEGACY_STATE)?JSON.parse(fs.readFileSync(LEGACY_STATE)).changeId:activeId();
+  if(cid){lockChange(cid);if(cmd!=='archive'&&fs.existsSync(safe(archiveJournal(cid))))throw Error('归档尚未完成，请先 --change '+cid+' archive 恢复');}
+ }
  if(['init','use','resume'].includes(cmd)&&CLI_CHANGE&&CLI_CHANGE!==arg)throw Error('--change 与目标 change 不一致');
  if(fs.existsSync(LEGACY_STATE)&&!['help','migrate','doctor','changes','list'].includes(cmd))throw Error('检测到旧布局，请先运行 migrate 迁移 current');
- if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes | status | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes [--json] | status [--all [--json]] | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
 证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
 证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
@@ -499,22 +606,8 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
  }else if(cmd==='use'||cmd==='resume'){
   if(!fs.existsSync(stateFileOf(arg||'')))throw Error('变更 '+(arg||'')+' 不存在（changes 查看列表）');
   const selected=readState(arg);if(!selected.currentNode)throw Error('变更已归档');setActive(arg);print(selected);
- }else if(cmd==='changes'||cmd==='list'){
-  const rows=[];
-  for(const cid of changeIds()){
-   const sf=stateFileOf(cid);
-   try{
-    const st=JSON.parse(fs.readFileSync(sf,'utf8'));
-    const done=new Set([...st.completedNodes,...Object.keys(st.skipped||{})]).size, total=nodes.length;
-    const taskBase=st.currentNode?changeDocDir(cid):st.archivePath;
-    const taskLine=taskBase&&fs.existsSync(safe(taskBase+'/tasks.json'))?(()=>{try{const ts=JSON.parse(fs.readFileSync(safe(taskBase+'/tasks.json'),'utf8'));const d=ts.filter(t=>t.status==='done').length;return d+'/'+ts.length;}catch{return '?';}})():'-';
-    rows.push({cid,node:st.currentNode||'(已归档)',progress:done+'/'+total,tasks:taskLine,updatedAt:st.updatedAt});
-   }catch(e){rows.push({cid,node:'(状态损坏)',progress:'-',tasks:'-',updatedAt:'-'});}
-  }
-  const act=activeId();
-  console.log('change\t节点\t节点进度\t任务\t更新时间\t'+(act?'（active: '+act+'）':''));
-  for(const r of rows)console.log([r.cid+(r.cid===act?' *':''),r.node,r.progress,r.tasks,r.updatedAt].join('\t'));
-  if(!rows.length)console.log('(无未归档变更；init <change-id> 新建)');
+ }else if(cmd==='changes'||cmd==='list'||cmd==='status'&&arg==='--all'){
+  listChanges();
  }else if(cmd==='migrate'){
   if(fs.existsSync(LEGACY_STATE)){migrateLegacy();process.exit(0);}
   const cid=activeId();if(!cid)throw Error('未聚焦任何变更：--change <change-id> migrate');
@@ -548,7 +641,9 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
   save(s,'migrate');print(s);
  }else{
   const s=state();
-  if(cmd==='status')print(s);
+  if(cmd==='archive')archiveChange(s);
+  else if(cmd==='status')print(s);
+  else if(fs.existsSync(safe(archiveJournal(s.changeId))))throw Error('归档尚未完成，请先 archive 恢复');
   else if(cmd==='handoff'){
    if(!s.currentNode)throw Error('变更已归档');
    console.log('# handoff '+s.changeId+' @ '+s.currentNode);
@@ -648,7 +743,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
      expects.length?'[expect] '+expects.map(p=>p+' -> '+(unmet.includes(p)?'MISS':'HIT')).join('; '):'',
      rejects.length?'[reject] '+rejects.map(p=>p+' -> '+(rejected.includes(p)?'HIT (failed)':'CLEAR')).join('; '):'',
      minOutput?'[min-output] '+minOutput+' (actual '+bodyLen+')':''].filter(Boolean).join('\n'));
-    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,exitCode:r.status,signal:r.signal||null,...(bash?{shellOptions:['errexit','pipefail']}:{}),recordedAt:new Date().toISOString(),inputs,log,
+    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,exitCode:r.status,signal:r.signal||null,...(bash?{shellOptions:['errexit','pipefail']}:{}),recordedAt:new Date().toISOString(),inputs,log,logHash:sha(fs.readFileSync(safe(log))),
      ...(expects.length?{expects}:{}),...(rejects.length?{rejects}:{}),...(minOutput?{minOutput}:{})};
     const ep=evDir()+'/'+arg+'.json';
     // 每次执行保存独立记录；固定路径始终指向最新结果，包括失败。
@@ -663,22 +758,11 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(value==='done'){const expect=docDir()+'/evidence/'+arg+'.json';if(extra[0]!==expect)throw Error('证据须为 '+expect+'（先用 run '+arg+' 生成）');validateEvidence(json(extra[0]),s,{path:extra[0]});t.evidence=extra[0];}else delete t.evidence;
     if(t.status==='done'&&value!=='done'&&ts.some(x=>x.dependsOn.includes(t.id)&&x.status==='done'))throw Error('先重开依赖本任务的已完成任务');
     t.status=value;write(docDir()+'/tasks.json',ts);save(s,'task '+arg+'='+value);print(s);
-   }else if(['check','advance','archive'].includes(cmd)){
+   }else if(['check','advance'].includes(cmd)){
     validate(s,s.currentNode,{approval:cmd!=='check'});
     if(cmd==='check'){console.log(APPROVAL_NODES.includes(s.currentNode)&&s.approvals[s.currentNode]?.fingerprint!==fingerprint(s,s.currentNode)?'ARTIFACTS_READY: 等待用户确认':'READY');print(s);}
-    else if(s.currentNode==='archive'){
-     if(cmd!=='archive')throw Error('归档请运行 archive');
-     const destination='docs/t-flow/archive/'+s.changeId;if(fs.existsSync(safe(destination)))throw Error('归档目录已存在');
-     s.completedNodes.push('archive');s.completedHashes.archive=fingerprint(s,'archive');s.currentNode=null;s.archivePath=destination;
-     // Copy first: interruption preserves the change directory and never loses source documents.
-     fs.mkdirSync(path.dirname(safe(destination)),{recursive:true});const docdir=changeDocDir(s.changeId);
-     fs.cpSync(safe(docdir),safe(destination),{recursive:true,errorOnExist:true,force:false});
-     save(s,'archive');write(destination+'/workflow-state.json',s);
-     try{fs.rmSync(safe(docdir),{recursive:true});}catch{console.error('WARN: 已归档但 '+docdir+' 清理失败，请核实后手动删除');}
-     if(fs.existsSync(ACTIVE_FILE)&&fs.readFileSync(ACTIVE_FILE,'utf8').trim()===s.changeId)clearActive();
-     print(s);
+    else if(s.currentNode==='archive'){throw Error('归档请运行 archive');
     }else{
-     if(cmd==='archive')throw Error('当前不是归档阶段');
      const from=s.currentNode;if(from==='verify')s.verifyFailures=0;
      s.completedHashes[from]=fingerprint(s,from);s.completedNodes.push(from);s.currentNode=nodes[nodes.findIndex(n=>n.id===from)+1]?.id??null;save(s,'advance '+from);print(s);
     }
