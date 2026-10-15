@@ -111,40 +111,6 @@ Python 缺失时该 Skill 仍可人工检索 `data/` 下的 CSV。用 `npx skill
 
 回归测试：`node --test tests/workflow.test.mjs`，使用临时项目运行真实工作流，不修改业务项目。
 
-## 从 sy-comet 迁移（v2.0.0 起改名）
-
-v2.0.0 把工作流从 `sy-comet` 改名为 `t-flow`，**不保留旧名**。改名触及全部标识符，已用旧名跑过的项目需手工迁移：
-
-| 旧 | 新 |
-|---|---|
-| `skills/sy-comet/`、`skills/sy-comet-<node>/` | `skills/t-flow/`、`skills/t-flow-<node>/` |
-| `.comet/runs/sy-comet/state.json` | `.t-flow/runs/t-flow/state.json` |
-| `docs/sy-comet/` | `docs/t-flow/` |
-| `COMET_RUN_ROOT` | `TFLOW_RUN_ROOT` |
-| `.sy-comet-manifest.json` | `.t-flow-manifest.json` |
-
-迁移步骤（在进行中变更所在的项目根执行）：
-
-```sh
-# 1) 搬迁目录（先确认路径无误再执行）
-mv .comet .t-flow && mv .t-flow/runs/sy-comet .t-flow/runs/t-flow
-mv docs/sy-comet docs/t-flow
-
-# 2) 改写状态里的工作流名（不改则 migrate 会拒绝：state.workflow 与协议不一致）
-node -e "const f='.t-flow/runs/t-flow/state.json',fs=require('fs');const s=JSON.parse(fs.readFileSync(f));s.workflow='t-flow';fs.writeFileSync(f,JSON.stringify(s,null,2))"
-
-# 3) 重新安装新版（旧的 sy-comet* skill 目录需手工删除）
-node install.mjs --project . --apply
-rm -rf .agents/skills/sy-comet .agents/skills/sy-comet-*
-
-# 4) 校验与续跑
-node .agents/skills/t-flow/scripts/yt.mjs migrate
-node .agents/skills/t-flow/scripts/yt.mjs doctor
-```
-
-从 sy-comet 改名时，第 1、2 步仍需手工完成，`migrate` 不会改写 `state.workflow`。随后 `migrate` 会将旧 t-flow 的单份状态和 `current/` 迁移为独立 change，保留旧记录；由于路径参与确认与证据指纹，需从 clarify 重新确认并执行验证。
-
-
 ## 多 change 独立执行
 
 每个独立任务用一个 change，允许多个任务同时未归档：
