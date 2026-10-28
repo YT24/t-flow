@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "workflow": "t-flow",
+  "protocolHash": "c74fccd3d2ceb7a10d3330775db8f105be54acc7c78c0096ce7e90ad0af6877c",
+  "changeId": "lean-verification-workflow",
+  "currentNode": "clarify",
+  "completedNodes": [],
+  "completedHashes": {},
+  "approvals": {},
+  "skipped": {},
+  "verifyFailures": 0,
+  "history": [
+    {
+      "action": "init",
+      "at": "2026-10-28T07:44:34.370Z"
+    }
+  ],
+  "updatedAt": "2026-10-28T07:44:34.370Z"
+}
