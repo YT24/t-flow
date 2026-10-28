@@ -3,17 +3,145 @@
   "workflow": "t-flow",
   "protocolHash": "c74fccd3d2ceb7a10d3330775db8f105be54acc7c78c0096ce7e90ad0af6877c",
   "changeId": "lean-verification-workflow",
-  "currentNode": "clarify",
-  "completedNodes": [],
-  "completedHashes": {},
-  "approvals": {},
-  "skipped": {},
+  "currentNode": "archive",
+  "completedNodes": [
+    "clarify",
+    "specify",
+    "plan",
+    "execute",
+    "verify"
+  ],
+  "completedHashes": {
+    "clarify": "4ed73cf18535912355b73846dd1fe890b92cc7dbc876d16eef1612cacb7676a4",
+    "specify": "fa3f60b73db0f9736977ebdc1c764adbfe2335dd9306b5f3b43daf94b892792f",
+    "plan": "db287a27413e2671aff02c1cac9cd8371340a58d1a7b092f23532596c13a2db8",
+    "execute": "db287a27413e2671aff02c1cac9cd8371340a58d1a7b092f23532596c13a2db8",
+    "verify": "5224a6f7158b43cf6ebccebef8e8fa3b74d4b032da47e787826bc247f0a44866"
+  },
+  "approvals": {
+    "clarify": {
+      "quote": "按这个范围继续修改。",
+      "fingerprint": "4ed73cf18535912355b73846dd1fe890b92cc7dbc876d16eef1612cacb7676a4",
+      "at": "2026-10-28T08:46:30.625Z"
+    },
+    "specify": {
+      "quote": "确认",
+      "fingerprint": "fa3f60b73db0f9736977ebdc1c764adbfe2335dd9306b5f3b43daf94b892792f",
+      "at": "2026-10-28T08:49:24.752Z"
+    }
+  },
+  "skipped": {
+    "ui": {
+      "reason": "仅修改工作流指导、模板、README 与回归测试，无界面变更",
+      "at": "2026-10-28T08:49:24.828Z"
+    },
+    "design": {
+      "reason": "文档与回归测试小变更，无架构调整、数据迁移或新接口，复用现有 acceptance 多 AC 映射",
+      "at": "2026-10-28T08:49:34.616Z"
+    }
+  },
   "verifyFailures": 0,
   "history": [
     {
       "action": "init",
       "at": "2026-10-28T07:44:34.370Z"
+    },
+    {
+      "action": "approve clarify",
+      "at": "2026-10-28T08:46:30.625Z"
+    },
+    {
+      "action": "advance clarify",
+      "at": "2026-10-28T08:46:30.665Z"
+    },
+    {
+      "action": "approve specify",
+      "at": "2026-10-28T08:49:24.752Z"
+    },
+    {
+      "action": "advance specify",
+      "at": "2026-10-28T08:49:24.792Z"
+    },
+    {
+      "action": "skip ui",
+      "at": "2026-10-28T08:49:24.828Z"
+    },
+    {
+      "action": "skip design",
+      "at": "2026-10-28T08:49:34.616Z"
+    },
+    {
+      "action": "advance plan",
+      "at": "2026-10-28T08:50:57.359Z"
+    },
+    {
+      "action": "task T-01=in_progress",
+      "at": "2026-10-28T08:51:26.977Z"
+    },
+    {
+      "action": "run T-01=failed",
+      "at": "2026-10-28T08:53:09.695Z"
+    },
+    {
+      "action": "run T-01=passed",
+      "at": "2026-10-28T08:53:42.446Z"
+    },
+    {
+      "action": "task T-01=done",
+      "at": "2026-10-28T08:53:42.486Z"
+    },
+    {
+      "action": "task T-02=in_progress",
+      "at": "2026-10-28T08:53:57.613Z"
+    },
+    {
+      "action": "run T-02=passed",
+      "at": "2026-10-28T08:55:04.329Z"
+    },
+    {
+      "action": "task T-02=done",
+      "at": "2026-10-28T08:55:04.371Z"
+    },
+    {
+      "action": "task T-03=in_progress",
+      "at": "2026-10-28T08:55:19.362Z"
+    },
+    {
+      "action": "run T-03=failed",
+      "at": "2026-10-28T08:57:05.807Z"
+    },
+    {
+      "action": "run T-03=passed",
+      "at": "2026-10-28T08:58:42.320Z"
+    },
+    {
+      "action": "run T-01=passed",
+      "at": "2026-10-28T08:59:00.955Z"
+    },
+    {
+      "action": "run T-02=passed",
+      "at": "2026-10-28T08:59:01.027Z"
+    },
+    {
+      "action": "task T-03=done",
+      "at": "2026-10-28T08:59:01.068Z"
+    },
+    {
+      "action": "advance execute",
+      "at": "2026-10-28T08:59:28.025Z"
+    },
+    {
+      "action": "run REQ-01-REQ-02-REQ-03-REQ-04-lean-guidance=passed",
+      "at": "2026-10-28T09:00:35.724Z"
+    },
+    {
+      "action": "run REQ-05-regression=passed",
+      "at": "2026-10-28T09:01:24.061Z"
+    },
+    {
+      "action": "advance verify",
+      "at": "2026-10-28T09:02:39.618Z"
     }
   ],
-  "updatedAt": "2026-10-28T07:44:34.370Z"
+  "updatedAt": "2026-10-28T09:02:39.618Z"
 }

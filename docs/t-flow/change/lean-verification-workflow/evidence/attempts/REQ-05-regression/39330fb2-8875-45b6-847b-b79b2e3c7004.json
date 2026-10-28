@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "REQ-05-regression",
+  "runId": "39330fb2-8875-45b6-847b-b79b2e3c7004",
+  "node": "verify",
+  "directories": {
+    "skills/t-flow/templates": [
+      "skills/t-flow/templates/archive-report.md",
+      "skills/t-flow/templates/design.md",
+      "skills/t-flow/templates/evidence.json",
+      "skills/t-flow/templates/prd.md",
+      "skills/t-flow/templates/spec-sync.json",
+      "skills/t-flow/templates/tasks.json",
+      "skills/t-flow/templates/test-report.md",
+      "skills/t-flow/templates/test-results.json",
+      "skills/t-flow/templates/ui.md"
+    ]
+  },
+  "changeId": "lean-verification-workflow",
+  "status": "passed",
+  "command": "node --test tests/workflow.test.mjs",
+  "exitCode": 0,
+  "signal": null,
+  "recordedAt": "2026-10-28T09:01:24.060Z",
+  "inputs": {
+    "docs/t-flow/change/lean-verification-workflow/clarify-log.md": "a9fe0e6dae43881b440454e5650527ec44b1927c865f4cc7e5c6f10392c13ae1",
+    "docs/t-flow/change/lean-verification-workflow/prd.md": "01135580f9e17704321dd6d5177bfa3521e847a7d46a90e4aebbae173e0c2e71",
+    "docs/t-flow/change/lean-verification-workflow/adr.md": "e6d36cf1e1101367ef58e4dacc99cb323f6afe7c1184bf15d9619ee7680d7fa2",
+    "docs/t-flow/change/lean-verification-workflow/spec-delta.md": "d196f137346083bf2a0803f1bbc8af06c1a5b10be8dbaf82042b8cb55bcfef14",
+    "docs/t-flow/change/lean-verification-workflow/plan.md": "304c22f64c88435fab98769e01b961feffbee0409e9e69f457866fd195e2f591",
+    "skills/t-flow-specify/SKILL.md": "69f0c6abd4ab37c5357f6b343ba07da7eaaa1c95902c9260f072d518e33d4e74",
+    "skills/t-flow-design/SKILL.md": "8408e5aeaac2a60002bd7f34dac9d7adbe55caae4252da2aa9b2e6a8b4e1c319",
+    "skills/t-flow-verify/SKILL.md": "4d1964e006b2611e59f995d2ff4fed5ee7074be1d8104b91de6614a3b1236145",
+    "skills/t-flow/templates/archive-report.md": "8ba05c37adf74b61610071523f935cb96b32585c207fb8ef95c84d3bcff49240",
+    "skills/t-flow/templates/design.md": "879cf5bcd641e6747c11b34930a459f4163a01757686da26dc57b6ccb72e086a",
+    "skills/t-flow/templates/evidence.json": "f199de2be51be8abb35686b8d3154b90195b37bc006c12ab26f3e681696902d0",
+    "skills/t-flow/templates/prd.md": "ade13b2f105e4088a1b7a97b4eff5062f3d3e8708373fb6adc2a1cede7645ff6",
+    "skills/t-flow/templates/spec-sync.json": "b1133b93bdbab0cf93510ad2125dfd9df0e18100eecea71a9a1963f9ea493f47",
+    "skills/t-flow/templates/tasks.json": "548edeae85b3e7004d07e01b31e203831a2210cf62f6c7038f9900ba77ccc60c",
+    "skills/t-flow/templates/test-report.md": "b9bdee7e97046c8118f28c31cd17714d313aaea29d82a3a0e2fd64f0f730de15",
+    "skills/t-flow/templates/test-results.json": "f2e4ccd1a2ad19d0c290d428dd40d26eb5413ca08661840056f43b6572b50853",
+    "skills/t-flow/templates/ui.md": "982e6eb3b444a60518f3ebfb5047a840079b9c6bd0787fe90ec4e561363b8264",
+    "skills/t-flow/reference/runtime-contract.md": "ff39413568c35f0f54e1f8d0ccb2d74b75ff398f619e14ed950b5878f5afe42a",
+    "README.md": "96677de13eb155b665c2ce5dfd5b9cea9516db8bf1fd9452f8a4b47df6e8db9d",
+    "tests/workflow.test.mjs": "59c2f61057f3a1c68f8c1b5c401b7722bbd33a1b292fdbf3820c073ab1b465b4"
+  },
+  "log": "docs/t-flow/change/lean-verification-workflow/logs/REQ-05-regression-39330fb2-8875-45b6-847b-b79b2e3c7004.log",
+  "logHash": "4404b74a064352be5d2ea702688e697c4ae8c6bc6d9d11b1f45abd7e32c42e1e",
+  "expects": [
+    "pass 81",
+    "fail 0"
+  ]
+}

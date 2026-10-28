@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "id": "T-01",
+  "runId": "5c91865f-c5c0-42fe-a301-bd223cf011aa",
+  "node": "execute",
+  "directories": {},
+  "changeId": "lean-verification-workflow",
+  "status": "passed",
+  "command": "node -e 'const fs=require('\\''fs'\\'');const files=['\\''skills/t-flow-specify/SKILL.md'\\'','\\''skills/t-flow-design/SKILL.md'\\'','\\''skills/t-flow-verify/SKILL.md'\\''];const text=files.map(f=>fs.readFileSync(f,'\\''utf8'\\'')).join('\\''\\n'\\'');for(const expected of ['\\''共享自动化测试集'\\'','\\''最低有效'\\'','\\''至多 1 条核心'\\'','\\''一个真实用例可覆盖多条相关 AC'\\''])if(!text.includes(expected))throw Error('\\''missing '\\''+expected);console.log('\\''T-01 PASS: 3 skills'\\'');'",
+  "exitCode": 0,
+  "signal": null,
+  "recordedAt": "2026-10-28T08:59:00.954Z",
+  "inputs": {
+    "docs/t-flow/change/lean-verification-workflow/clarify-log.md": "a9fe0e6dae43881b440454e5650527ec44b1927c865f4cc7e5c6f10392c13ae1",
+    "docs/t-flow/change/lean-verification-workflow/prd.md": "01135580f9e17704321dd6d5177bfa3521e847a7d46a90e4aebbae173e0c2e71",
+    "docs/t-flow/change/lean-verification-workflow/adr.md": "e6d36cf1e1101367ef58e4dacc99cb323f6afe7c1184bf15d9619ee7680d7fa2",
+    "docs/t-flow/change/lean-verification-workflow/spec-delta.md": "d196f137346083bf2a0803f1bbc8af06c1a5b10be8dbaf82042b8cb55bcfef14",
+    "docs/t-flow/change/lean-verification-workflow/plan.md": "304c22f64c88435fab98769e01b961feffbee0409e9e69f457866fd195e2f591",
+    "tests/workflow.test.mjs": "59c2f61057f3a1c68f8c1b5c401b7722bbd33a1b292fdbf3820c073ab1b465b4",
+    "skills/t-flow-specify/SKILL.md": "69f0c6abd4ab37c5357f6b343ba07da7eaaa1c95902c9260f072d518e33d4e74",
+    "skills/t-flow-design/SKILL.md": "8408e5aeaac2a60002bd7f34dac9d7adbe55caae4252da2aa9b2e6a8b4e1c319",
+    "skills/t-flow-verify/SKILL.md": "4d1964e006b2611e59f995d2ff4fed5ee7074be1d8104b91de6614a3b1236145"
+  },
+  "log": "docs/t-flow/change/lean-verification-workflow/logs/T-01-5c91865f-c5c0-42fe-a301-bd223cf011aa.log",
+  "logHash": "24596c390d21e42612d613664d482e4e9159e5ebc83d8402115108679eb0c24d",
+  "expects": [
+    "T-01 PASS"
+  ]
+}

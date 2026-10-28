@@ -1,0 +1,61 @@
+[
+  {
+    "id": "T-01",
+    "title": "更新需求设计与验证的精简测试指导",
+    "dependsOn": [],
+    "modules": [
+      "skills/t-flow-specify/SKILL.md",
+      "skills/t-flow-design/SKILL.md",
+      "skills/t-flow-verify/SKILL.md"
+    ],
+    "acceptance": [
+      "AC-01-1",
+      "AC-02-1",
+      "AC-03-1"
+    ],
+    "status": "done",
+    "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/T-01.json"
+  },
+  {
+    "id": "T-02",
+    "title": "更新测试模板运行说明和README",
+    "dependsOn": [
+      "T-01"
+    ],
+    "modules": [
+      "skills/t-flow/templates/prd.md",
+      "skills/t-flow/templates/design.md",
+      "skills/t-flow/templates/test-results.json",
+      "skills/t-flow/templates/test-report.md",
+      "skills/t-flow/reference/runtime-contract.md",
+      "README.md"
+    ],
+    "acceptance": [
+      "AC-02-1",
+      "AC-03-1",
+      "AC-04-1"
+    ],
+    "status": "done",
+    "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/T-02.json"
+  },
+  {
+    "id": "T-03",
+    "title": "增加精简验证静态回归并执行完整测试",
+    "dependsOn": [
+      "T-01",
+      "T-02"
+    ],
+    "modules": [
+      "tests/workflow.test.mjs"
+    ],
+    "acceptance": [
+      "AC-01-1",
+      "AC-02-1",
+      "AC-03-1",
+      "AC-04-1",
+      "AC-05-1"
+    ],
+    "status": "done",
+    "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/T-03.json"
+  }
+]

@@ -5,7 +5,9 @@ ui.md 必须含 ui-scope 声明块（mode: new|change、files、affected），�
 
 UI 阶段未选择时 status/resume/advance 输出 UI_CHOICE，提示用户跳过或选择设计 Skill。ui-use 必须显式指定名称；未记录选择不得通过 UI 检查与确认。选择记录独立于原型验收；reopen UI 或前序节点清除选择，skip ui 清除所用 Skill。
 
-验收检查：PRD 中出现 AC-NN-N 时，各用例的 acceptance 数组必须逐条覆盖全部 AC，且用于覆盖的用例须 required:true/status:passed；声明 acceptance 的用例必须记录 method（static/unit/integration/e2e/manual/build），重复用例 ID 和未知 AC 会被拒绝。REQ 覆盖关闭不影响已声明的 AC 校验；没有 AC 的旧 PRD 保持原 REQ 检查。方法与覆盖关系由执行者声明，脚本不能证明测试语义正确。
+验收检查：PRD 中出现 AC-NN-N 时，各用例的 acceptance 数组必须逐条覆盖全部 AC，且用于覆盖的用例须 required:true/status:passed；一个真实用例可覆盖多条相关 AC，不为每条 AC 重复执行相同套件。声明 acceptance 的用例必须记录 method（static/unit/integration/e2e/manual/build），重复用例 ID 和未知 AC 会被拒绝。REQ 覆盖关闭不影响已声明的 AC 校验；没有 AC 的旧 PRD 保持原 REQ 检查。方法与覆盖关系由执行者声明，脚本不能证明测试语义正确。
+
+默认精简验证：后端纯逻辑以单元测试为主，持久化验证最终数据、约束、事务或审计结果；前端默认使用构建/静态检查、少量组件测试、至多 1 条核心 E2E 与必要人工冒烟，无界面变更不要求 E2E。同一行为只在最低有效层级验证，不在浏览器中重复后端已覆盖的全组合；已确认 AC 声明真实权限、数据或界面行为时仍须有效验证，not_run 不得视为通过。
 
 run 支持重复 --reject <正则>，任一命中即 failed；新证据记录 exitCode/signal。参数仍在执行前校验。Bash 命令自动启用 errexit/pipefail，SHELLOPTS 导出使嵌套 Bash 继承；显式关闭选项或使用其他解释器仍需调用者保证失败传播。--expect 多个条件应重复传参，正则中的 | 表示任选一个。
 

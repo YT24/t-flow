@@ -1,0 +1,12 @@
+{
+  "changeId": "lean-verification-workflow",
+  "reviewed": true,
+  "files": [
+    {
+      "source": "docs/t-flow/change/lean-verification-workflow/spec-delta.md",
+      "sourceHash": "d196f137346083bf2a0803f1bbc8af06c1a5b10be8dbaf82042b8cb55bcfef14",
+      "target": "openspec/specs/verification/spec.md",
+      "targetHash": "1a9b1716dd651ddb0015eef0ff4536da78f63915049c9b526ef9429fbdad8694"
+    }
+  ]
+}

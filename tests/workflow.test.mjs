@@ -472,6 +472,23 @@ test('requirement coverage cannot substitute for individual acceptance coverage'
  assert.match(f.run('check').out,/验收标准.*AC-01-2/);
  result.tests[0].acceptance.push('AC-01-2');f.doc('test-results.json',result);f.ok('check');
 });
+test('lean verification guidance shares suites without weakening acceptance coverage',()=>{
+ const expectations={
+  'skills/t-flow-specify/SKILL.md':['共享自动化测试集','不默认逐组合创建 AC'],
+  'skills/t-flow-design/SKILL.md':['最低有效测试层级','至多 1 条核心链路 E2E'],
+  'skills/t-flow-verify/SKILL.md':['一个真实用例可覆盖多条相关 AC','不在浏览器中重复后端已覆盖'],
+  'skills/t-flow/templates/prd.md':['需要独立交付门禁','相关 AC 可共享一个测试套件'],
+  'skills/t-flow/templates/design.md':['最低有效验证层级','无界面变更不要求 E2E'],
+  'skills/t-flow/templates/test-results.json':['一个真实用例可覆盖多条相关 AC','可选或未测用例不满足覆盖'],
+  'skills/t-flow/templates/test-report.md':['逐条填写 AC 状态','套件通过不能掩盖'],
+  'skills/t-flow/reference/runtime-contract.md':['默认精简验证','not_run 不得视为通过'],
+  'README.md':['默认采用最低有效验证层级','报告仍须逐条记录 AC 状态']
+ };
+ for(const [file,phrases] of Object.entries(expectations)){
+  const text=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
+  for(const phrase of phrases)assert.ok(text.includes(phrase),`${file} missing: ${phrase}`);
+ }
+});
 test('optional unexecuted acceptance and unknown acceptance ids cannot satisfy coverage',t=>{
  const {f,result}=acceptanceFixture(t);
  result.tests.push({id:'manual',required:false,status:'not_run',method:'manual',acceptance:['AC-01-2']});f.doc('test-results.json',result);

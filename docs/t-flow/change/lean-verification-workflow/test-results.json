@@ -1,0 +1,28 @@
+{
+  "changeId": "lean-verification-workflow",
+  "tests": [
+    {
+      "id": "REQ-01-REQ-02-REQ-03-REQ-04-lean-guidance",
+      "required": true,
+      "method": "static",
+      "acceptance": [
+        "AC-01-1",
+        "AC-02-1",
+        "AC-03-1",
+        "AC-04-1"
+      ],
+      "status": "passed",
+      "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/REQ-01-REQ-02-REQ-03-REQ-04-lean-guidance.json"
+    },
+    {
+      "id": "REQ-05-regression",
+      "required": true,
+      "method": "build",
+      "acceptance": [
+        "AC-05-1"
+      ],
+      "status": "passed",
+      "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/REQ-05-regression.json"
+    }
+  ]
+}

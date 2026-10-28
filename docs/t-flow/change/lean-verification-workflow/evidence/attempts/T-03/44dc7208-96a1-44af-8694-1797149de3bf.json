@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "id": "T-03",
+  "runId": "44dc7208-96a1-44af-8694-1797149de3bf",
+  "node": "execute",
+  "directories": {},
+  "changeId": "lean-verification-workflow",
+  "status": "failed",
+  "command": "node --test tests/workflow.test.mjs",
+  "exitCode": 0,
+  "signal": null,
+  "recordedAt": "2026-10-28T08:57:05.806Z",
+  "inputs": {
+    "docs/t-flow/change/lean-verification-workflow/clarify-log.md": "a9fe0e6dae43881b440454e5650527ec44b1927c865f4cc7e5c6f10392c13ae1",
+    "docs/t-flow/change/lean-verification-workflow/prd.md": "01135580f9e17704321dd6d5177bfa3521e847a7d46a90e4aebbae173e0c2e71",
+    "docs/t-flow/change/lean-verification-workflow/adr.md": "e6d36cf1e1101367ef58e4dacc99cb323f6afe7c1184bf15d9619ee7680d7fa2",
+    "docs/t-flow/change/lean-verification-workflow/spec-delta.md": "d196f137346083bf2a0803f1bbc8af06c1a5b10be8dbaf82042b8cb55bcfef14",
+    "docs/t-flow/change/lean-verification-workflow/plan.md": "304c22f64c88435fab98769e01b961feffbee0409e9e69f457866fd195e2f591",
+    "tests/workflow.test.mjs": "59c2f61057f3a1c68f8c1b5c401b7722bbd33a1b292fdbf3820c073ab1b465b4"
+  },
+  "log": "docs/t-flow/change/lean-verification-workflow/logs/T-03-44dc7208-96a1-44af-8694-1797149de3bf.log",
+  "logHash": "b5594294f9b070a2b40173a95009f5549075c5b907c950098e467312427d71bf",
+  "expects": [
+    "# fail 0"
+  ]
+}
