@@ -62,7 +62,7 @@ prototypes: [docs/t-flow/change/<change-id>/prototype.html]      # 已展示的�
 用户明确不需要界面或选择跳过时不写 ui.md：沿用用户决定，运行 `yt.mjs skip ui <原因>` 记录后本节点直接完成。工具不具备时不可假装已实测；未实测须写明原因与残余风险。
 
 ### Completion reasoning
-逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。check 通过后必须 stop：向用户展示原型，等待用户明确确认没有问题，用 yt.mjs approve ui <用户确认原文> 记录后才允许 advance；未收到确认不得进入下一阶段。以 skip 完成的节点不新增产物、无需原型确认，status 应已进入 design；已有历史原型保留，后续执行忽略其 UI scope 与样式检查。确认后 advance，仅按 NEXT/SKILL 输出继续。
+逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。check 通过后必须 stop：向用户展示原型，用确认卡片请用户点选（确认/需要修改），把点选文字作为确认原文用 yt.mjs approve ui 记录后才允许 advance；未收到确认不得进入下一阶段。以 skip 完成的节点不新增产物、无需原型确认，status 应已进入 design；已有历史原型保留，后续执行忽略其 UI scope 与样式检查。确认后 advance，仅按 NEXT/SKILL 输出继续。
 
 ### Red flags
 空文件、未经执行的测试、伪造用户确认、沿用过期证据均不能算完成。中断后从 status 和磁盘恢复，不重新初始化覆盖。

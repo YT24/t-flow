@@ -10,10 +10,10 @@ description: 用于用户调用 /t-flow 的完整可恢复研发工作流；支�
 若用户只是询问进度/状态/是否卡住（不要求推进），加载 `t-flow-status`——它是只读的，不会改动任何状态。
 
 ### 决策分类与用户停顿点（decision points）
-本工作流有五个用户停顿点（decision point）：需求澄清、PRD/增量 Spec、UI 原型、技术设计、交付验收（由 protocol 各节点的 approval 声明，改动即变更 protocolHash）。到达停顿点必须 stop 并等待用户决定；常规实现和验证自动执行。确认过且输入未变不重复询问。只有用户明确确认后才用 approve 记录原文。进入 UI 时先展示「跳过 UI / ui-ux-pro-max / frontend-design」选择，等待用户回答后记录 ui-use 或 skip；已有明确选择且需求未变时沿用。用户明确不需要界面时用 skip ui <原因> 跳过 UI 停顿点；小型变更（无架构调整、无数据迁移、无新接口）可 skip design 记录原因跳过设计停顿点（skip 原因落盘，不产生对应产物），reopen 前序节点会使其后的跳过记录失效。加载状态输出 SKILL 指定的单个节点，完成后 check 检查产物；待确认时返回 ARTIFACTS_READY，取得用户确认并 approve 后才可 advance；归档用 archive。
+本工作流有五个用户停顿点（decision point）：需求澄清、PRD/增量 Spec、UI 原型、技术设计、交付验收（由 protocol 各节点的 approval 声明，改动即变更 protocolHash）。到达停顿点必须 stop 并等待用户决定；常规实现和验证自动执行。确认过且输入未变不重复询问。**阶段确认一律用交互式确认卡片**（宿主 agent 的选项问答工具，如 AskUserQuestion）：展示「确认 / 需要修改」等选项让用户点选，不要求用户回复文字；只有用户实际点选确认后，才把点选的选项文字作为确认原文用 approve 记录（如 approve specify 确认），不支持卡片交互的环境回退为文字确认，同样记录原文。不得代用户点选或伪造确认。进入 UI 时先展示「跳过 UI / ui-ux-pro-max / frontend-design」选择，等待用户回答后记录 ui-use 或 skip；已有明确选择且需求未变时沿用。用户明确不需要界面时用 skip ui <原因> 跳过 UI 停顿点；小型变更（无架构调整、无数据迁移、无新接口）可 skip design 记录原因跳过设计停顿点（skip 原因落盘，不产生对应产物），reopen 前序节点会使其后的跳过记录失效。加载状态输出 SKILL 指定的单个节点，完成后 check 检查产物；待确认时返回 ARTIFACTS_READY，取得用户确认并 approve 后才可 advance；归档用 archive。
 
 ### Resume Rules
-本工作流实际运行统一使用 yt.mjs：其检查包含任务、测试与确认。状态和产物不一致先修复，不依据会话记忆标记完成。若用户只是询问进度/状态/是否卡住而不要求推进，加载 `t-flow-status`（只读，不改动状态）。**多个变更可并行**：每个 change 有独立目录（docs/t-flow/change/<id>/）与状态（.t-flow/runs/t-flow/<id>/state.json），互不干扰；命令作用于当前聚焦的 change（use 切换，init 新建并聚焦，changes 列表含各自节点进度与任务完成度）。协议文件更新后需对每个未归档变更运行 `--change <id> migrate`；验证-修复循环超限后向用户展示失败历史，用 decide 记录用户决策原文解除。
+本工作流实际运行统一使用 yt.mjs：其检查包含任务、测试与确认。状态和产物不一致先修复，不依据会话记忆标记完成。若用户只是询问进度/状态/是否卡住而不要求推进，加载 `t-flow-status`（只读，不改动状态）。**多个变更可并行**：每个 change 有独立目录（docs/t-flow/change/<id>/）与状态（.t-flow/runs/t-flow/<id>/state.json），互不干扰；命令作用于当前聚焦的 change（use 切换，init 新建并聚焦，changes 列表含各自节点进度与任务完成度）。协议文件更新后需对每个未归档变更运行 `--change <id> migrate`；验证-修复循环超限后向用户展示失败历史并用卡片让其点选方向（继续修复/调整需求/停止），用 decide 记录所点选文字解除。
 
 ### Red Flags
 | 想法 | 风险 |
