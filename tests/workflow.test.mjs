@@ -284,8 +284,18 @@ test('install links every bundled skill into .claude/skills',t=>{
   assert.ok(fs.existsSync(link),n+' 应有 .claude 入口（否则 Claude 看不到）');
   assert.ok(fs.lstatSync(link).isSymbolicLink(),n+' 的 .claude 条目应是符号链接');
  }
- // t-flow 入口与节点 Skill 都必须在其中
- for(const n of ['t-flow','t-flow-clarify','t-flow-verify'])assert.ok(fs.existsSync(path.join(claudeDir,n)),n+' 应有 .claude 入口');
+ // t-flow 入口、节点与独立命令 Skill 都必须在其中
+ for(const n of ['t-flow','t-flow-clarify','t-flow-verify','t-flow-fix'])assert.ok(fs.existsSync(path.join(claudeDir,n)),n+' 应有 .claude 入口');
+ assert.ok(fs.existsSync(path.join(agentDir,'t-flow-fix','templates','fix-log.md')),'应安装修复记录模板');
+});
+test('t-flow-fix is explicit, change scoped and outside the standard workflow',()=>{
+ const skill=fs.readFileSync(new URL('../skills/t-flow-fix/SKILL.md',import.meta.url),'utf8');
+ for(const phrase of ['/t-flow-fix <change-id> <问题描述>','普通修复请求不自动启用','不推进工作流状态机','fix-log.md','不直接编辑 `.t-flow/runs/`','不修改 `docs/t-flow/archive/`','同步更新受修复影响'])assert.ok(skill.includes(phrase),'t-flow-fix missing: '+phrase);
+ const template=fs.readFileSync(new URL('../skills/t-flow-fix/templates/fix-log.md',import.meta.url),'utf8');
+ for(const phrase of ['change-id','验证命令与结果','未测项','同步文档'])assert.ok(template.includes(phrase),'fix-log template missing: '+phrase);
+ const readme=fs.readFileSync(new URL('../README.md',import.meta.url),'utf8');
+ assert.ok(readme.includes('/t-flow-fix <change-id> <问题描述>'));
+ assert.ok(readme.includes('普通“修复”请求不会自动启用此命令'));
 });
 test('--no-link-claude skips creating .claude entries',t=>{
  const {proj,install}=installerFixture(t);

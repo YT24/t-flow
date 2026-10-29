@@ -54,6 +54,8 @@ node install.mjs --project /path/to/your-project --update --apply --force
 
 在目标项目中对 agent 说 `/t-flow <需求描述>`，或存在进行中变更时说「继续」。
 
+已有 change 需要小范围修复时，可明确调用 `/t-flow-fix <change-id> <问题描述>`。该命令独立于标准 8 节点工作流，直接修复并运行必要测试，完成后追加 `docs/t-flow/change/<change-id>/fix-log.md` 并同步受影响文档；不推进状态、不生成审批或标准证据。省略 change-id 时仅在 active 明确或只有一个未归档 change 时使用，多个候选必须显式指定。普通“修复”请求不会自动启用此命令。
+
 运行入口（项目根目录）：
 
 ```sh
@@ -85,6 +87,8 @@ node .agents/skills/t-flow/scripts/yt.mjs ensure-skills  # 补齐缺失的 UI �
 
 - `skills/t-flow/` — 入口 Skill（protocol、脚本、模板、参考文档）
 - `skills/t-flow-<node>/` — 8 个节点 Skill
+- `skills/t-flow-status/` — 只读状态查看 Skill
+- `skills/t-flow-fix/` — 独立快速修复 Skill 与 `fix-log.md` 模板，不推进标准工作流
 - `skills/grill-me` `skills/grilling` — 需求澄清依赖
 - `skills/frontend-design` — UI 兜底设计 Skill（Anthropic 官方，Apache-2.0）
 - `skills/ui-ux-pro-max` — UI 主设计 Skill（`data/` 检索库 + `references/` + `scripts/`）

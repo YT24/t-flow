@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const MANIFEST = '.t-flow-manifest.json';
 
 const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'skills');
