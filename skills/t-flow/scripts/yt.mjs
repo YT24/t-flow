@@ -213,7 +213,7 @@ function coverage(r){
  const criteria=new Set(prd.match(/\bAC-\d+-\d+\b/g)||[]),covered=new Set();
  for(const t of r.tests){
   if(t.acceptance!==undefined&&(!Array.isArray(t.acceptance)||t.acceptance.some(a=>typeof a!=='string')))throw Error('用例 '+t.id+' 的 acceptance 必须是验收编号数组');
-  if(t.acceptance?.length&&!['static','unit','integration','e2e','manual','build'].includes(t.method))throw Error('用例 '+t.id+' 的 method 须明确验证方式（static/unit/integration/e2e/manual/build）');
+  if(t.acceptance?.length&&!['static','unit','integration','manual','build'].includes(t.method))throw Error('用例 '+t.id+' 的 method 须明确验证方式（static/unit/integration/manual/build）');
   for(const ac of t.acceptance||[]){
    if(!criteria.has(ac))throw Error('用例 '+t.id+' 引用了未知验收标准 '+ac);
    if(t.required&&t.status==='passed')covered.add(ac);
