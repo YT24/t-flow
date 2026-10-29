@@ -171,6 +171,7 @@ if (apply) {
 // targetRoot 形如 <base>/.agents/skills，故同级目录是 <base>/.claude/skills。
 const claudeRoot = path.join(path.dirname(path.dirname(targetRoot)), '.claude', 'skills');
 let linked = 0, linkSkipped = 0;
+const linkFailed = [];
 if (apply && !noLink) {
   fs.mkdirSync(claudeRoot, { recursive: true });
   for (const name of skills) {
@@ -182,9 +183,11 @@ if (apply && !noLink) {
       let dstExists = false;
       try { dstExists = fs.existsSync(dst) || fs.lstatSync(dst).isSymbolicLink(); } catch { dstExists = false; }
       if (dstExists) { linkSkipped++; continue; }
-      fs.symlinkSync(path.relative(claudeRoot, src), dst);
+      // Windows 下目录符号链接需要开发者模式或提权；junction 无需特权，且 junction 目标必须是绝对路径。
+      if (process.platform === 'win32') fs.symlinkSync(src, dst, 'junction');
+      else fs.symlinkSync(path.relative(claudeRoot, src), dst);
       linked++;
-    } catch { linkSkipped++; }
+    } catch (e) { linkFailed.push(`${name}: ${e.code || e.message}`); }
   }
 }
 
@@ -192,6 +195,10 @@ console.log(`${update ? 'Update' : 'Install'} ${apply ? '' : 'preview '}→ ${ta
 console.log(`skills: ${skills.join(', ')}`);
 console.log(`${written} file(s) ${apply ? 'written' : 'would be written'}, ${skipped} identical skipped${update ? `, ${pruned} stale pruned` : ''}.`);
 if (apply && !noLink) console.log(`Claude 入口: ${linked} 个符号链接建于 ${claudeRoot}${linkSkipped ? `，${linkSkipped} 个已存在（跳过）` : ''}。`);
+if (linkFailed.length) {
+  console.log('链接失败（.claude 入口缺失，Claude 可能看不到这些 Skill）:');
+  for (const lf of linkFailed) console.log(`- ${lf}`);
+}
 if (!apply) console.log(`（预览）将在 ${claudeRoot} 为每个 Skill 建符号链接；用 --no-link-claude 关闭。`);
 if (conflicts.length) {
   console.log(`conflicts（${update ? '本地已修改，未覆盖' : '内容不一致，未覆盖'}；加 --force 覆盖）:`);

@@ -426,7 +426,9 @@ function linkSkill(name){
    if(!fs.existsSync(path.join(src,'SKILL.md')))continue;
    if(fs.existsSync(dst))continue;
    fs.mkdirSync(path.dirname(dst),{recursive:true});
-   fs.symlinkSync(path.relative(path.dirname(dst),src),dst);
+   // Windows 目录符号链接需要特权，junction 无需；junction 目标须为绝对路径。
+   if(process.platform==='win32')fs.symlinkSync(src,dst,'junction');
+   else fs.symlinkSync(path.relative(path.dirname(dst),src),dst);
   }catch{/* 链接失败不阻断：另一条路径仍可用 */ }
  }
 }

@@ -590,7 +590,7 @@ function archiveFixture(t){
 }
 for(const point of ['copy','publish','state'])test('archive resumes interruption after '+point,t=>{
  const f=archiveFixture(t),hook=path.join(f.base,'interrupt.cjs');
- fs.writeFileSync(hook,`const fs=require('fs');const orig=fs.${point==='copy'?'cpSync':'renameSync'};fs.${point==='copy'?'cpSync':'renameSync'}=function(a,b,...rest){const result=orig.call(this,a,b,...rest);if(${point==='copy'?"String(b).includes('archive')":point==='publish'?"String(b).endsWith('/archive/test')":"String(b).endsWith('/test/state.json') && JSON.parse(fs.readFileSync(b)).currentNode===null"})throw Error('simulated interruption');return result;};`);
+ fs.writeFileSync(hook,`const fs=require('fs'),sep=require('path').sep;const orig=fs.${point==='copy'?'cpSync':'renameSync'};fs.${point==='copy'?'cpSync':'renameSync'}=function(a,b,...rest){const result=orig.call(this,a,b,...rest);if(${point==='copy'?"String(b).includes('archive')":point==='publish'?"String(b).endsWith(sep+'archive'+sep+'test')":"String(b).endsWith(sep+'test'+sep+'state.json') && JSON.parse(fs.readFileSync(b)).currentNode===null"})throw Error('simulated interruption');return result;};`);
  const r=spawnSync(process.execPath,['--require',hook,path.join(f.base,'skills/t-flow/scripts/yt.mjs'),'archive'],{cwd:f.root,encoding:'utf8',env:{...process.env,TFLOW_RUN_ROOT:f.root}});
  assert.equal(r.status,1);assert.match(r.stderr,/simulated interruption/);
  f.ok('archive');assert.equal(f.read('.t-flow/runs/t-flow/test/state.json').currentNode,null);
@@ -626,7 +626,7 @@ test('archive recovery preserves changed source instead of deleting it',t=>{
 
 test('archive resumes cleanup interrupted after source removal',t=>{
  const f=archiveFixture(t),hook=path.join(f.base,'interrupt.cjs');
- fs.writeFileSync(hook,`const fs=require('fs'),orig=fs.rmSync;fs.rmSync=function(p,...args){const result=orig(p,...args);if(String(p).endsWith('/change/test'))throw Error('cleanup interrupted');return result;};`);
+ fs.writeFileSync(hook,`const fs=require('fs'),sep=require('path').sep,orig=fs.rmSync;fs.rmSync=function(p,...args){const result=orig(p,...args);if(String(p).endsWith(sep+'change'+sep+'test'))throw Error('cleanup interrupted');return result;};`);
  const r=spawnSync(process.execPath,['--require',hook,path.join(f.base,'skills/t-flow/scripts/yt.mjs'),'archive'],{cwd:f.root,env:{...process.env,TFLOW_RUN_ROOT:f.root}});assert.equal(r.status,1);
  assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'archive_pending');
  f.ok('--change','test','archive');assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'archived');
