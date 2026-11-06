@@ -161,7 +161,7 @@ PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。只把用户可观�
 
 change 根目录只保留各阶段协议 Markdown、`fix-log.md` 和可选 `manual-acceptance.md`。JSON 固定放在 `plan/tasks.json`、`verify/test-results.json`、`archive/spec-sync.json`；`evidence/`、`logs/`、`screenshots/` 为受控目录，独立原型 HTML 放 `prototypes/`，评审截图放 `screenshots/`。验证辅助脚本作为 `run` 的命令执行并用 `--input` 绑定，输出由 `run` 写入 `logs/`、`evidence/`；其它临时文件和工具缓存用完删除或移出。`check`/`archive` 对散文件和根目录非 Markdown 文件只读告警，不自动删除，也不阻断历史变更；归档前应完成清理。
 
-确需 E2E UI 操作验证时（用户明确要求或 AC 必须真实浏览器操作），先用卡片选择环境：**本地启动服务**（推荐，隔离注册与数据、直连本地实例）或**发布到开发环境**。选择后者时，只精确提交并推送当前任务实现代码，禁止 `git add -A`，不包含测试脚本、工作流产物、临时文件或凭证；无法分离其他改动时停止。推送后按既有发布链路部署并确认运行 commit，再由用户提供访问地址和测试专用账号密码。凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 通过 `run` 执行并逐 AC 留证。
+确需 E2E UI 操作验证时（用户明确要求或 AC 必须真实浏览器操作），先用卡片选择环境：**本地启动服务**（推荐，隔离注册与数据、直连本地实例）或**发布到开发环境**。选择后者时，只精确提交并推送当前任务实现代码，禁止 `git add -A`，不包含测试脚本、工作流产物、临时文件或凭证；无法分离其他改动时停止。推送后按既有发布链路部署并确认运行 commit，再由用户提供访问地址和测试专用账号密码。凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 通过 `run` 执行并逐 AC 留证。同一页面的相关 AC 共用一个 Playwright 套件和浏览器会话，一次启动/登录后批量断言，不逐 AC 写新脚本、重启浏览器或重复构建上传；成功截图不逐张阅读，失败定位与人工评审时才打开。
 
 基于 RBAC 旧产物的具体审查见 [文档产物审查报告](docs/reviews/2026-10-14-rbac-workflow-artifacts-review.md)。
 
@@ -171,10 +171,11 @@ change 根目录只保留各阶段协议 Markdown、`fix-log.md` 和可选 `manu
 node skills/t-flow/scripts/yt.mjs status --all
 node skills/t-flow/scripts/yt.mjs status --all --json
 node skills/t-flow/scripts/yt.mjs --change <change-id> status
+node skills/t-flow/scripts/yt.mjs --change <change-id> status --json
 node skills/t-flow/scripts/yt.mjs --change <change-id> archive
 ```
 
-`changes` 和 `list` 同样提供全部 change 的状态列表（包括已归档）。列表包含阶段、总体完成数、任务完成数、当前阶段进度、状态、下一步、阻塞原因和更新时间；查询不改变当前选择。文档阶段显示必需非空产物数量，执行阶段显示已完成任务数，验证阶段显示必测项中已声明通过的数量。它们是数量进度，不代表实际工作量；状态会另行校验过期证据和用户确认，满额但校验失败仍显示阻塞。
+`changes` 和 `list` 同样提供全部 change 的状态列表（包括已归档）。列表包含阶段、总体完成数、任务完成数、当前阶段进度、状态、下一步、阻塞原因和更新时间；查询不改变当前选择。为减少 token，`run`/`task`/`approve`/`advance` 等默认只输出紧凑 `STATE` 和 `NEXT`/`SKILL`，完整确认与 history 保存在 state.json，`--change <id> status --json` 可读取完整状态。各阶段按最小集合读取上游产物，不重复全量展开已确认文档和成功日志；执行长任务应在 plan 阶段按内聚实现单元拆分。文档阶段显示必需非空产物数量，执行阶段显示已完成任务数，验证阶段显示必测项中已声明通过的数量。它们是数量进度，不代表实际工作量；状态会另行校验过期证据和用户确认，满额但校验失败仍显示阻塞。
 
 同一 change 的修改命令互斥，不同 change 可并行。锁覆盖长时间运行的测试命令，正常结束和报错均释放。强制终止或断电后可能留下 `.t-flow/runs/t-flow/<id>/write.lock`：先核对其中主机/PID 及其子进程已停止，再手工删除该锁并继续；不能因为等待时间长就删除。锁不会隔离共享源码或阻止编辑器直接写文件。
 

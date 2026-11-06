@@ -13,7 +13,9 @@ run 支持重复 --reject <正则>，任一命中即 failed；新证据记录 ex
 
 ui-scope 可声明 prototypes 数组：路径须在本 change 内且是实际文件。原型和评审截图参与 UI 及后续节点的确认/完成指纹，也绑定到执行证据；修改原型需 reopen ui 并重新确认。未声明 prototypes 的旧 ui.md 保持兼容；新版产物生成独立原型时必须声明。
 
-状态查询：用户要求查看所有 change 状态时运行 `status --all`（或 `changes`/`list`），汇总阶段、总进度、任务完成数、阶段进度、状态、下一步、阻塞原因和更新时间；不执行推进操作。`status --all --json` / `changes --json` 提供结构化列表。总进度包含跳过阶段；文档阶段进度统计非空必需文件，execute 统计 done 任务，verify 统计必测用例中声明 passed 的数量。计数不能代替校验；状态会额外检查产物漂移、证据有效性及确认门禁，过期证据即使计数满额也显示阻塞。
+控制上下文与 token：各阶段只读取直接所需产物——clarify 续跑读已有 clarify-log；specify 读 clarify-log；ui 读 prd 与涉及界面；design 读 prd、ui.md（如有）和受影响接口；plan 读 prd、design.md（如有）；execute 只读当前任务、相关 AC/设计段落和 modules 文件；verify 读 prd 的 AC、verify/test-results.json 及失败或异常证据的相关日志，成功日志只引用路径不全文展开；archive 读 test-report、spec-delta 与 archive/spec-sync.json。需要更多细节时再按需打开，不重复全量读取已确认产物；项目 AGENTS.md 同一会话已读且未变不重复读取。
+
+状态查询：用户要求查看所有 change 状态时运行 `status --all`（或 `changes`/`list`），汇总阶段、总进度、任务完成数、阶段进度、状态、下一步、阻塞原因和更新时间；不执行推进操作。`status --all --json` / `changes --json` 提供结构化列表。run/task/approve/advance 等命令默认只输出紧凑 STATE 摘要和 NEXT/SKILL，不重复打印不断增长的 approvals、指纹与 history；完整状态始终保存在 state.json，审计或排障时用 `--change <id> status --json`。总进度包含跳过阶段；文档阶段进度统计非空必需文件，execute 统计 done 任务，verify 统计必测用例中声明 passed 的数量。计数不能代替校验；状态会额外检查产物漂移、证据有效性及确认门禁，过期证据即使计数满额也显示阻塞。
 
 同一 change 的修改命令使用 write.lock 互斥，锁覆盖读状态、执行命令、保存结果全程；其他 change 和只读查询不受阻。正常退出或命令报错释放锁；强制终止/断电留下锁时，必须核对锁中主机、PID 及其子进程均已停止后才手工删除，禁止仅凭锁龄强制抢占。此锁不阻止外部编辑器直接修改文档或业务代码。
 
@@ -23,4 +25,4 @@ ui-scope 可声明 prototypes 数组：路径须在本 change 内且是实际文
 
 change 根目录只保留各阶段协议 Markdown、fix-log.md 及可选 manual-acceptance.md。JSON 固定放在 plan/tasks.json、verify/test-results.json、archive/spec-sync.json；evidence/、logs/、screenshots/ 为受控目录，独立原型 HTML 放 prototypes/，评审截图放 screenshots/。验证辅助脚本必须作为 run 的命令执行并用 --input 绑定，输出由 run 写入 logs/evidence；其它临时文件和工具缓存用完删除或移出。check/archive 对散文件和根目录非 Markdown 文件只读列出并 WARN，不自动删除、不因此阻断历史变更；归档前由执行者完成清理。
 
-E2E UI 操作验证只在用户明确要求或 AC 必须真实浏览器操作时启用，先由用户卡片选择本地隔离服务或开发环境。本地实例直连并隔离注册与数据；开发环境分支只精确提交并推送当前任务实现代码，禁止 git add -A，不包含测试脚本、工作流产物、临时文件或凭证，无法分离其他改动时停止。推送不等于部署完成，须确认开发环境运行的是该提交。访问地址和测试专用账号由用户提供，凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 仍由 run 真实执行并逐 AC 留证。
+E2E UI 操作验证只在用户明确要求或 AC 必须真实浏览器操作时启用，先由用户卡片选择本地隔离服务或开发环境。本地实例直连并隔离注册与数据；开发环境分支只精确提交并推送当前任务实现代码，禁止 git add -A，不包含测试脚本、工作流产物、临时文件或凭证，无法分离其他改动时停止。推送不等于部署完成，须确认开发环境运行的是该提交。访问地址和测试专用账号由用户提供，凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 仍由 run 真实执行并逐 AC 留证。同一页面的相关 AC 共用一个 Playwright 套件与浏览器会话，一次启动/登录后批量断言，不逐 AC 写新脚本、重启浏览器或重复构建上传；成功截图不逐张阅读，失败定位与人工评审时才打开。

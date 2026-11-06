@@ -30,6 +30,14 @@ function fixture(t) {
 }
 
 test('check validates artifacts before approval but advance still requires approval',t=>{const f=fixture(t);f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('check');assert.equal(f.run('advance').code,1);});
+test('default state output is compact and full status remains available',t=>{
+ const f=fixture(t);f.setup();f.pass();
+ const out=f.ok('advance').out;
+ assert.match(out,/STATE: /);assert.match(out,/NEXT: verify/);assert.doesNotMatch(out,/"history"|"approvals"/);
+ const full=JSON.parse(f.ok('status','--json').out);
+ assert.equal(full.currentNode,'verify');assert.ok(Array.isArray(full.history));assert.ok(full.approvals.specify);
+ const normal=f.ok('status').out;assert.match(normal,/STATE: /);assert.match(normal,/SUMMARY: /);assert.doesNotMatch(normal,/"history"/);
+});
 test('failed rerun blocks advancement and preserves separate attempt logs',t=>{const f=fixture(t);f.setup();f.pass();const old=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.equal(f.run('run','T-01','--',process.execPath,'-e','process.exit(1)').code,1);assert.equal(f.run('check').code,1);assert.match(fs.readFileSync(path.join(f.root,old.log),'utf8'),/PASS/);assert.notEqual(f.read('docs/t-flow/change/test/evidence/T-01.json').log,old.log);f.pass();f.ok('check');});
 for(const change of ['add','delete'])test('directory evidence detects '+change+' files',t=>{const f=fixture(t);f.setup();f.pass();if(change==='add')f.put('src/new.js','new source');else fs.unlinkSync(path.join(f.root,'src/a.js'));assert.equal(f.run('check').code,1);});
 test('migration rolls changed approved artifacts back for fresh confirmation',t=>{const f=fixture(t);f.setup();f.doc('prd.md','REQ-01 changed');const p=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json');const proto=JSON.parse(fs.readFileSync(p));proto.comment+=' updated';fs.writeFileSync(p,JSON.stringify(proto));f.ok('migrate');const s=f.read('.t-flow/runs/t-flow/test/state.json');assert.equal(s.currentNode,'specify');assert.equal(s.approvals.specify,undefined);assert.equal(f.run('advance').code,1);});
@@ -498,6 +506,12 @@ test('lean verification guidance shares suites without weakening acceptance cove
   const text=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
   for(const phrase of phrases)assert.ok(text.includes(phrase),`${file} missing: ${phrase}`);
  }
+});
+test('browser verification is opt-in and batches related AC in one session',()=>{
+ const verify=fs.readFileSync(new URL('../skills/t-flow-verify/SKILL.md',import.meta.url),'utf8');
+ for(const phrase of ['不主动新增 E2E','共用一个 Playwright 套件和浏览器会话','不为每条 AC 单独写脚本','截图只在失败定位'])assert.ok(verify.includes(phrase),'verify missing: '+phrase);
+ const ui=fs.readFileSync(new URL('../skills/t-flow-ui/SKILL.md',import.meta.url),'utf8');
+ for(const phrase of ['不逐状态启动浏览器','共用一次浏览器会话批量验证'])assert.ok(ui.includes(phrase),'ui missing: '+phrase);
 });
 test('optional unexecuted acceptance and unknown acceptance ids cannot satisfy coverage',t=>{
  const {f,result}=acceptanceFixture(t);

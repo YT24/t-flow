@@ -7,7 +7,7 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 
 ### Prerequisites
 所有命令固定使用 `yt.mjs --change <change-id> <命令>`，沿用入口选定的 change；产物只读写 `docs/t-flow/change/<change-id>/`。
-运行 yt.mjs status 确认当前节点为 ui，读取已完成产物及目标项目约束。
+运行 yt.mjs status 确认当前节点为 ui；按 runtime-contract 的最小读取清单读取本阶段所需产物，项目约束同一会话已读且未变不重复读取。
 
 ### Steps
 
@@ -55,6 +55,7 @@ prototypes: [docs/t-flow/change/<change-id>/prototypes/prototype.html]      # �
 - 路径不存在、`mode` 非法、`change` 却漏填 `affected`，`check` 都会直接阻断
 
 另外记录：所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**。
+五态可由组件测试、原型或真实页面分层覆盖，不逐状态启动浏览器。只有必须真实浏览器操作的 AC 才进入 verify 的 E2E 流程；同一页面的相关 AC 共用一次浏览器会话批量验证。
 逐状态说明测试对象是原型还是实际页面，以及角色、步骤、断言和证据。静态截图不证明弹窗提交、树勾选保存、直接 URL 拒绝或后端授权；未执行的交互写未测，不能扩大“已实测”的结论。页面/路由/权限点须与已确认 PRD 一致，合并页面需同步需求并重新确认。
 
 **存量项目（mode: change）额外注意**：若本次改动涉及样式/主题/design token，务必把样式文件列入 `files` 或 `affected`。`run` 在 UI 变更未绑定任何样式文件时会告警——因为视觉改动若不在证据输入里，就不会触发"证据过期"，等于没人复核过新界面。

@@ -7,7 +7,7 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 
 ### Prerequisites
 所有命令固定使用 `yt.mjs --change <change-id> <命令>`，沿用入口选定的 change；产物只读写 `docs/t-flow/change/<change-id>/`。
-运行 yt.mjs status 确认当前节点为 specify，读取已完成产物及目标项目约束。
+运行 yt.mjs status 确认当前节点为 specify；按 runtime-contract 的最小读取清单读取本阶段所需产物，项目约束同一会话已读且未变不重复读取。
 
 ### Steps
 从澄清纪要编写 prd.md，给每项需求稳定编号和验收标准；spec-delta.md 写 ADDED/MODIFIED/REMOVED 行为与场景；adr.md 仅记录有取舍的重要决定，无额外决定写明。不能把设计实现细节当作业务需求。本节点是用户确认门禁：check 通过后必须 stop，向用户展示 PRD 范围、需求编号与 spec-delta 变更，用确认卡片请用户点选确认（不要求回复文字），把点选文字作为确认原文用 yt.mjs approve specify 记录，未确认不得 advance。需求编号须与 verify 阶段 verify/test-results.json 的用例 id 对应，保证可追溯。

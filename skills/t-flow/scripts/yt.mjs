@@ -392,7 +392,9 @@ function listChanges(){
  if(!rows.length)console.log('(无 change；init <change-id> 新建)');
 }
 function print(s){
- console.log(JSON.stringify(s,null,2));
+ if(cmd==='status'&&_argv.includes('--json')){console.log(JSON.stringify(s,null,2));return;}
+ // 默认只输出恢复所需摘要；完整确认、指纹和 history 落盘保存，需要审计时用 status --json。
+ console.log('STATE: '+JSON.stringify({changeId:s.changeId,currentNode:s.currentNode,completedNodes:s.completedNodes,skipped:Object.keys(s.skipped||{}),verifyFailures:s.verifyFailures,...(s.archivePath?{archivePath:s.archivePath}:{}),updatedAt:s.updatedAt}));
  if(cmd==='status')console.log('SUMMARY: '+JSON.stringify(changeSummary(s.changeId)));
  if(!s.currentNode){console.log('NEXT: done');return;}
  console.log('NEXT: '+s.currentNode+(APPROVAL_NODES.includes(s.currentNode)?'（用户确认门禁，approve 记录确认原文后才能 advance）':''));
@@ -568,7 +570,8 @@ try{
  }
  if(['init','use','resume'].includes(cmd)&&CLI_CHANGE&&CLI_CHANGE!==arg)throw Error('--change 与目标 change 不一致');
  if(fs.existsSync(LEGACY_STATE)&&!['help','migrate','doctor','changes','list'].includes(cmd))throw Error('检测到旧布局，请先运行 migrate 迁移 current');
- if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes [--json] | status [--all [--json]] | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes [--json] | status [--all] [--json] | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
+状态输出：run/task/approve/advance 等默认只打印紧凑 STATE 摘要；status --json 输出单个 change 的完整状态，status --all --json 输出全部 change 摘要。
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
 证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
 证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
