@@ -14,7 +14,7 @@ clarify → specify → ui → design → plan → execute → verify → archiv
 - 无界面需求可 `skip ui`，小型变更（无架构调整、无数据迁移、无新接口）可 `skip design`，skip 原因均落盘；skip 由 agent 自行判定并记录，不是用户确认的替代品，评审时应复核原因
 - 执行证据由 `yt.mjs run` 真实执行命令生成（限 execute/verify 阶段），禁止手写；任务 `modules` 必须非空且路径真实存在，证据必须绑定至少一个实现文件，绑定源码内容或目录文件清单变化时证据自动过期
 - `run` 支持 `--expect <正则>` 与 `--min-output <字符数>` 断言命令输出，与退出码同时满足才算 passed；不使用断言会告警（脚本无法判断命令语义）。参数校验在命令执行前完成，固定证据路径始终保存同 id 的最新结果，失败立即阻断推进；每次执行的证据保存在 `evidence/attempts/<id>/<runId>.json`，日志独立保留
-- 需求可追溯：`prd.md` 的需求编号（默认 `REQ-NN`）必须在 `test-results.json` 中有对应的已通过必测用例，缺项阻断 verify；不使用编号的项目置 `config.requireCoverage:false`
+- 需求可追溯：`prd.md` 的需求编号（默认 `REQ-NN`）必须在 `verify/test-results.json` 中有对应的已通过必测用例，缺项阻断 verify；不使用编号的项目置 `config.requireCoverage:false`
 - 证据不可复制冒用：校验会核对证据路径中的 id 与文件内容 id 一致，并要求存在对应的 `evidence/attempts/<id>/<runId>.json` 真实执行记录，且固定路径与执行记录一致；verify 用例须在 verify 阶段自行执行（不得引用 execute 任务证据），证据日志须位于 `logs/` 下。只改一个文件无法伪造通过
 - 验证-修复循环最多 3 次（以 reopen 时存在 failed 结果计），超限强制交用户决策，`decide` 记录决策原文后解除
 - 状态在 `.t-flow/runs/t-flow/<change-id>/state.json`，产物在 `docs/t-flow/change/<change-id>/`，中断/新会话可直接续跑；工作流文件更新后用 `migrate` 迁移进行中的状态
@@ -151,7 +151,7 @@ node <runtime> --change add-rbac archive
 
 PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。只把用户可观察、需要独立交付门禁的结果定义为必测 AC；内部边界、普通异常和角色/对象/规则排列组合优先纳入共享自动化测试集，不默认逐组合创建 AC。
 
-验证用例仍用 `REQ-NN-场景` 命名，在 `test-results.json` 中用 `acceptance` 数组逐条关联 AC，并注明 `method`（static/unit/integration/e2e/manual/build）。一个真实测试套件可覆盖多条相关 AC，不为每条 AC 重复启动相同环境或浏览器；报告仍须逐条记录 AC 状态、证据和未测项。所有声明的 AC 都必须被已通过的必测用例覆盖；需求级覆盖不能替代逐条验收。未知 AC、重复用例 ID、未测的必测项阻断 verify/archive。没有 AC 的旧 PRD 保持原 REQ 校验。
+验证用例仍用 `REQ-NN-场景` 命名，在 `verify/test-results.json` 中用 `acceptance` 数组逐条关联 AC，并注明 `method`（static/unit/integration/e2e/manual/build）。一个真实测试套件可覆盖多条相关 AC，不为每条 AC 重复启动相同环境或浏览器；报告仍须逐条记录 AC 状态、证据和未测项。所有声明的 AC 都必须被已通过的必测用例覆盖；需求级覆盖不能替代逐条验收。未知 AC、重复用例 ID、未测的必测项阻断 verify/archive。没有 AC 的旧 PRD 保持原 REQ 校验。
 
 默认采用最低有效验证层级：后端纯逻辑以单元测试为主，持久化验证最终数据、约束、事务或审计结果；前端默认使用构建/静态检查、少量共享组件测试与必要人工冒烟。不在浏览器中重复后端已覆盖的角色、对象和规则全组合。已确认 AC 明确声明真实权限、数据或界面行为时仍须有效验证；改变既有验收范围或方式必须重新确认，不能借精简策略把 `not_run` 视为通过。
 
@@ -159,7 +159,7 @@ PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。只把用户可观�
 
 独立原型和评审截图使用 `ui-scope.prototypes` 声明，文件保存到当前 change 内，参与 UI 确认指纹；改动后须重新确认。旧 ui.md 未声明 prototypes 时保持兼容，新版生成原型时须声明。证据报告区分静态检查、mock 单测、原型演示和真实页面/API/数据库测试，未测写 not_run。脚本核对声明、指纹和执行结果，仍不能判断测试是否忠实覆盖业务语义。
 
-change 目录不是临时工作区：只保留协议产物、`fix-log.md`、`evidence/`、`logs/`、`screenshots/` 和 `ui-scope.prototypes` 声明的文件。浏览器、数据库等验证辅助脚本作为 `run` 的命令执行并用 `--input` 绑定，输出由 `run` 写入 `logs/`、`evidence/`；临时探索脚本、手工输出和工具缓存用完删除或移出。`check`/`archive` 对散文件只读告警，不自动删除，也不阻断历史变更；归档前应完成清理。
+change 根目录只保留各阶段协议 Markdown、`fix-log.md` 和可选 `manual-acceptance.md`。JSON 固定放在 `plan/tasks.json`、`verify/test-results.json`、`archive/spec-sync.json`；`evidence/`、`logs/`、`screenshots/` 为受控目录，独立原型 HTML 放 `prototypes/`，评审截图放 `screenshots/`。验证辅助脚本作为 `run` 的命令执行并用 `--input` 绑定，输出由 `run` 写入 `logs/`、`evidence/`；其它临时文件和工具缓存用完删除或移出。`check`/`archive` 对散文件和根目录非 Markdown 文件只读告警，不自动删除，也不阻断历史变更；归档前应完成清理。
 
 确需 E2E UI 操作验证时（用户明确要求或 AC 必须真实浏览器操作），先用卡片选择环境：**本地启动服务**（推荐，隔离注册与数据、直连本地实例）或**发布到开发环境**。选择后者时，只精确提交并推送当前任务实现代码，禁止 `git add -A`，不包含测试脚本、工作流产物、临时文件或凭证；无法分离其他改动时停止。推送后按既有发布链路部署并确认运行 commit，再由用户提供访问地址和测试专用账号密码。凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 通过 `run` 执行并逐 AC 留证。
 

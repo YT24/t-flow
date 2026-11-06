@@ -21,6 +21,6 @@ ui-scope 可声明 prototypes 数组：路径须在本 change 内且是实际文
 
 执行证据与 attempts 中记录必须完整一致，日志必须符合 logHash。旧证据没有日志摘要时需重新执行 run，不能手工补摘要充当复验；已归档历史不自动重写。摘要用于发现意外修改，不是防篡改签名，不能证明测试本身覆盖正确。
 
-change 目录只保留受控内容：协议产物、fix-log.md、evidence/、logs/、screenshots/ 及 ui-scope.prototypes 声明的文件。验证辅助脚本必须作为 run 的命令执行并用 --input 绑定，输出由 run 写入 logs/evidence；临时探索脚本、手工 txt/json 输出和工具缓存目录用完删除或移出。check/archive 对散文件只读列出并 WARN，不自动删除、不因此阻断历史变更；归档前由执行者完成清理。
+change 根目录只保留各阶段协议 Markdown、fix-log.md 及可选 manual-acceptance.md。JSON 固定放在 plan/tasks.json、verify/test-results.json、archive/spec-sync.json；evidence/、logs/、screenshots/ 为受控目录，独立原型 HTML 放 prototypes/，评审截图放 screenshots/。验证辅助脚本必须作为 run 的命令执行并用 --input 绑定，输出由 run 写入 logs/evidence；其它临时文件和工具缓存用完删除或移出。check/archive 对散文件和根目录非 Markdown 文件只读列出并 WARN，不自动删除、不因此阻断历史变更；归档前由执行者完成清理。
 
 E2E UI 操作验证只在用户明确要求或 AC 必须真实浏览器操作时启用，先由用户卡片选择本地隔离服务或开发环境。本地实例直连并隔离注册与数据；开发环境分支只精确提交并推送当前任务实现代码，禁止 git add -A，不包含测试脚本、工作流产物、临时文件或凭证，无法分离其他改动时停止。推送不等于部署完成，须确认开发环境运行的是该提交。访问地址和测试专用账号由用户提供，凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 仍由 run 真实执行并逐 AC 留证。

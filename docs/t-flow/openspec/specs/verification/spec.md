@@ -10,7 +10,7 @@
 
 - 执行 agent 将需要用户验收的可观察结果定义为 AC。
 - 内部边界由共享自动化测试集覆盖，不自动增加独立交付门禁。
-- 所有已定义 AC 仍须在 `test-results.json` 中逐条关联已通过的必测用例。
+- 所有已定义 AC 仍须在 `verify/test-results.json` 中逐条关联已通过的必测用例。
 
 ### Requirement: 使用最低有效验证层级
 

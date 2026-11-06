@@ -15,7 +15,7 @@ function fixture(t) {
  const put=(p,v)=>{fs.mkdirSync(path.dirname(path.join(root,p)),{recursive:true});fs.writeFileSync(path.join(root,p),typeof v==='string'?v:JSON.stringify(v));};
  const doc=(p,v,cid='test')=>put(`docs/t-flow/change/${cid}/`+p,v);
  const read=p=>JSON.parse(fs.readFileSync(path.join(root,p)));
- const setup=(prd='REQ-01 behavior')=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?prd:'content');ok('approve','specify','confirmed');ok('advance');ok('skip','ui','no UI');ok('skip','design','small');doc('plan.md','plan');put('src/a.js','export const a=1;');doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);ok('advance');};
+ const setup=(prd='REQ-01 behavior')=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?prd:'content');ok('approve','specify','confirmed');ok('advance');ok('skip','ui','no UI');ok('skip','design','small');doc('plan.md','plan');put('src/a.js','export const a=1;');doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);ok('advance');};
  const pass=()=>{ok('run','T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');ok('task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');};
  // 走到 ui 节点（不 skip）
  const atUi=()=>{ok('init','test');doc('clarify-log.md','scope');ok('approve','clarify','confirmed');ok('advance');for(const p of ['prd.md','adr.md','spec-delta.md'])doc(p,p==='prd.md'?'REQ-01 behavior':'content');ok('approve','specify','confirmed');ok('advance');};
@@ -33,9 +33,9 @@ test('check validates artifacts before approval but advance still requires appro
 test('failed rerun blocks advancement and preserves separate attempt logs',t=>{const f=fixture(t);f.setup();f.pass();const old=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.equal(f.run('run','T-01','--',process.execPath,'-e','process.exit(1)').code,1);assert.equal(f.run('check').code,1);assert.match(fs.readFileSync(path.join(f.root,old.log),'utf8'),/PASS/);assert.notEqual(f.read('docs/t-flow/change/test/evidence/T-01.json').log,old.log);f.pass();f.ok('check');});
 for(const change of ['add','delete'])test('directory evidence detects '+change+' files',t=>{const f=fixture(t);f.setup();f.pass();if(change==='add')f.put('src/new.js','new source');else fs.unlinkSync(path.join(f.root,'src/a.js'));assert.equal(f.run('check').code,1);});
 test('migration rolls changed approved artifacts back for fresh confirmation',t=>{const f=fixture(t);f.setup();f.doc('prd.md','REQ-01 changed');const p=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json');const proto=JSON.parse(fs.readFileSync(p));proto.comment+=' updated';fs.writeFileSync(p,JSON.stringify(proto));f.ok('migrate');const s=f.read('.t-flow/runs/t-flow/test/state.json');assert.equal(s.currentNode,'specify');assert.equal(s.approvals.specify,undefined);assert.equal(f.run('advance').code,1);});
-test('optional unexecuted case cannot cover a delivery requirement',t=>{const f=fixture(t);f.setup();f.pass();f.ok('advance');f.doc('test-report.md','report');f.doc('test-results.json',{changeId:'test',tests:[{id:'smoke',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/T-01.json'},{id:'REQ-01',required:false,status:'not_run'}]});assert.equal(f.run('check').code,1);});
+test('optional unexecuted case cannot cover a delivery requirement',t=>{const f=fixture(t);f.setup();f.pass();f.ok('advance');f.doc('test-report.md','report');f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'smoke',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/T-01.json'},{id:'REQ-01',required:false,status:'not_run'}]});assert.equal(f.run('check').code,1);});
 for(const flags of [['--expect','['],['--timeout','Infinity'],['--min-output','Infinity']])test('invalid flags rejected before execution: '+flags.join(' '),t=>{const f=fixture(t);f.setup();assert.equal(f.run('run','T-01',...flags,'--',process.execPath,'-e','require("fs").writeFileSync("side-effect","yes")').code,1);assert.equal(fs.existsSync(path.join(f.root,'side-effect')),false);});
-test('full workflow archives with required coverage and retains inspectable logs',t=>{const f=fixture(t);f.setup();f.pass();f.ok('advance');f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');f.doc('test-report.md','report');f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});f.ok('advance');f.doc('archive-report.md','accepted');f.put('docs/t-flow/openspec/specs/test/spec.md','spec');const hash=p=>spawnSync(process.execPath,['--input-type=module','-e',`import fs from 'node:fs';import crypto from 'node:crypto';console.log(crypto.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))`,path.join(f.root,p)],{encoding:'utf8'}).stdout.trim();const source='docs/t-flow/change/test/spec-delta.md',target='docs/t-flow/openspec/specs/test/spec.md';f.doc('spec-sync.json',{changeId:'test',reviewed:true,files:[{source,target,sourceHash:hash(source),targetHash:hash(target)}]});f.ok('check');assert.equal(f.run('archive').code,1);f.ok('approve','archive','accepted');f.ok('init','other');f.put('docs/t-flow/change/other/clarify-log.md','other scope');const sibling=f.read('.t-flow/runs/t-flow/other/state.json');f.ok('--change','test','archive');f.ok('--change','test','doctor');assert.deepEqual(f.read('.t-flow/runs/t-flow/other/state.json'),sibling);assert.equal(fs.readFileSync(path.join(f.root,'docs/t-flow/change/other/clarify-log.md'),'utf8'),'other scope');assert.equal(fs.existsSync(path.join(f.root,'docs/t-flow/change/test')),false);assert.equal(f.read('.t-flow/runs/t-flow/test/state.json').currentNode,null);assert.equal(fs.readFileSync(path.join(f.root,'.t-flow/runs/t-flow/active'),'utf8').trim(),'other');f.ok('--change','test','status');assert.match(f.ok('list').out,/test.*已归档.*8\/8.*1\/1/);assert.equal(f.run('init','test').code,1);});
+test('full workflow archives with required coverage and retains inspectable logs',t=>{const f=fixture(t);f.setup();f.pass();f.ok('advance');f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');f.doc('test-report.md','report');f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});f.ok('advance');f.doc('archive-report.md','accepted');f.put('docs/t-flow/openspec/specs/test/spec.md','spec');const hash=p=>spawnSync(process.execPath,['--input-type=module','-e',`import fs from 'node:fs';import crypto from 'node:crypto';console.log(crypto.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))`,path.join(f.root,p)],{encoding:'utf8'}).stdout.trim();const source='docs/t-flow/change/test/spec-delta.md',target='docs/t-flow/openspec/specs/test/spec.md';f.doc('archive/spec-sync.json',{changeId:'test',reviewed:true,files:[{source,target,sourceHash:hash(source),targetHash:hash(target)}]});f.ok('check');assert.equal(f.run('archive').code,1);f.ok('approve','archive','accepted');f.ok('init','other');f.put('docs/t-flow/change/other/clarify-log.md','other scope');const sibling=f.read('.t-flow/runs/t-flow/other/state.json');f.ok('--change','test','archive');f.ok('--change','test','doctor');assert.deepEqual(f.read('.t-flow/runs/t-flow/other/state.json'),sibling);assert.equal(fs.readFileSync(path.join(f.root,'docs/t-flow/change/other/clarify-log.md'),'utf8'),'other scope');assert.equal(fs.existsSync(path.join(f.root,'docs/t-flow/change/test')),false);assert.equal(f.read('.t-flow/runs/t-flow/test/state.json').currentNode,null);assert.equal(fs.readFileSync(path.join(f.root,'.t-flow/runs/t-flow/active'),'utf8').trim(),'other');f.ok('--change','test','status');assert.match(f.ok('list').out,/test.*已归档.*8\/8.*1\/1/);assert.equal(f.run('init','test').code,1);});
 
 test('unchanged migration retains approvals and current node',t=>{const f=fixture(t);f.setup();const p=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json');const proto=JSON.parse(fs.readFileSync(p));proto.comment+=' updated';fs.writeFileSync(p,JSON.stringify(proto));f.ok('migrate');const s=f.read('.t-flow/runs/t-flow/test/state.json');assert.equal(s.currentNode,'execute');assert.equal(s.approvals.specify.quote,'confirmed');f.ok('doctor');});
 test('historical success cannot bypass latest failed attempt',t=>{
@@ -44,7 +44,7 @@ test('historical success cannot bypass latest failed attempt',t=>{
  const old=f.read('docs/t-flow/change/test/evidence/REQ-01.json');
  assert.equal(f.run('run','REQ-01','--input','src','--',process.execPath,'-e','process.exit(1)').code,1);
  f.doc('test-report.md','report');
- f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:`docs/t-flow/change/test/evidence/attempts/REQ-01/${old.runId}.json`}]});
+ f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:`docs/t-flow/change/test/evidence/attempts/REQ-01/${old.runId}.json`}]});
  const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据路径必须是|不是最新执行结果/);
 });
 test('legacy evidence requires rerun rather than silent upgrade',t=>{const f=fixture(t);f.setup();f.pass();const ep='docs/t-flow/change/test/evidence/T-01.json',old=f.read(ep);delete old.schemaVersion;f.put(ep,old);const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/旧版验证证据/);f.pass();f.ok('check');});
@@ -56,7 +56,7 @@ test('copied evidence file cannot impersonate another case id',t=>{
  f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  fs.copyFileSync(path.join(f.root,'docs/t-flow/change/test/evidence/REQ-01.json'),path.join(f.root,'docs/t-flow/change/test/evidence/REQ-02.json'));
  f.doc('test-report.md','report');
- f.doc('test-results.json',{changeId:'test',tests:[
+ f.doc('verify/test-results.json',{changeId:'test',tests:[
   {id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'},
   {id:'REQ-02',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-02.json'}]});
  const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/证据文件与内容 id 不一致/);
@@ -67,7 +67,7 @@ test('copied evidence with rewritten id still requires a real attempt record',t=
  const copied=f.read('docs/t-flow/change/test/evidence/REQ-01.json');copied.id='REQ-02';
  f.put('docs/t-flow/change/test/evidence/REQ-02.json',copied);
  f.doc('test-report.md','report');
- f.doc('test-results.json',{changeId:'test',tests:[
+ f.doc('verify/test-results.json',{changeId:'test',tests:[
   {id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'},
   {id:'REQ-02',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-02.json'}]});
  const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/缺少该证据的执行记录/);
@@ -75,7 +75,7 @@ test('copied evidence with rewritten id still requires a real attempt record',t=
 test('verify case cannot reuse execute task evidence',t=>{
  const f=fixture(t);f.setup();f.pass();f.ok('advance');
  f.doc('test-report.md','report');
- f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/T-01.json'}]});
+ f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/T-01.json'}]});
  const result=f.run('check');assert.equal(result.code,1);assert.match(result.out,/引用了 T-01 的证据/);
 });
 test('execute run rejects an id that is not a declared task',t=>{
@@ -90,13 +90,13 @@ test('same id reused across execute and verify is allowed once verify reruns it'
  for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
  f.ok('approve','specify','confirmed');f.ok('advance');f.ok('skip','ui','no UI');f.ok('skip','design','small');
  f.doc('plan.md','plan');f.put('src/a.js','export const a=1;');
- f.doc('tasks.json',[{id:'REQ-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);
+ f.doc('plan/tasks.json',[{id:'REQ-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);
  f.ok('advance');
  f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  f.ok('task','REQ-01','done','docs/t-flow/change/test/evidence/REQ-01.json');
  f.ok('advance');
  f.doc('test-report.md','report');
- f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});
+ f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});
  assert.equal(f.run('check').code,1,'execute-phase evidence must not satisfy the verify case');
  f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  f.ok('check','verify rerun of the same id must be accepted');
@@ -198,7 +198,7 @@ test('ui-scope files are force-bound even when missing from task modules',t=>{
  f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
  f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
  // modules 故意不含 ui-scope 声明的 src/App.vue
- f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
  f.ok('advance');
  f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');
@@ -216,7 +216,7 @@ test('affected interfaces are bound too, so declared impact cannot be bypassed',
  f.uiMd({mode:'change',files:['src/App.vue'],affected:['src/pages/Old.vue']});
  f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
  f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
- f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
  f.ok('advance');
  f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');
@@ -236,7 +236,7 @@ const g=fixture(t);
  g.ok('approve','specify','confirmed');g.ok('advance');g.ok('ui-use','ui-ux-pro-max');g.uiMd();
  g.ok('approve','ui','confirmed');g.ok('advance');g.ok('skip','design','small');
  g.doc('plan.md','plan');g.put('src/api.js','export const x=1;');
- g.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ g.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
  g.ok('advance');
  const warned=g.run('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  assert.match(warned.out,/UI 变更（ui.md 存在），但证据未绑定任何样式\/主题文件/);
@@ -254,7 +254,7 @@ test('adding a new page is detected through the ui-scope directory binding',t=>{
  f.doc('ui.md','```ui-scope\nmode: new\nfiles: [src/pages]\naffected: []\n```');
  f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
  f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
- f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
+ f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
  f.ok('advance');
  f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');
@@ -384,7 +384,7 @@ test('evidence in another change cannot validate the selected task',t=>{
  const f=fixture(t);f.setup();f.pass();
  const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');
  f.put('docs/t-flow/change/other/evidence/T-01.json',ev);
- const tasks=f.read('docs/t-flow/change/test/tasks.json');tasks[0].evidence='docs/t-flow/change/other/evidence/T-01.json';f.doc('tasks.json',tasks);
+ const tasks=f.read('docs/t-flow/change/test/plan/tasks.json');tasks[0].evidence='docs/t-flow/change/other/evidence/T-01.json';f.doc('plan/tasks.json',tasks);
  assert.equal(f.run('--change','test','check').code,1);
 });
 test('commands honor TFLOW_RUN_ROOT when cwd differs',t=>{
@@ -461,7 +461,7 @@ test('skipping UI clears a previous skill selection and produces no UI artifact'
 
 test('skipping a reopened UI ignores the old prototype scope during execution',t=>{
  const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');f.uiMd();f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
- f.doc('plan.md','plan');f.put('src/api.js','export const a=1;');f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);f.ok('advance');
+ f.doc('plan.md','plan');f.put('src/api.js','export const a=1;');f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);f.ok('advance');
  f.ok('reopen','ui');f.ok('skip','ui','用户选择跳过原型');f.ok('skip','design','small');f.ok('advance');
  fs.unlinkSync(path.join(f.root,'src/App.vue'));
  const r=f.ok('run','T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
@@ -478,9 +478,9 @@ function acceptanceFixture(t){
  return {f,result};
 }
 test('requirement coverage cannot substitute for individual acceptance coverage',t=>{
- const {f,result}=acceptanceFixture(t);f.doc('test-results.json',result);
+ const {f,result}=acceptanceFixture(t);f.doc('verify/test-results.json',result);
  assert.match(f.run('check').out,/验收标准.*AC-01-2/);
- result.tests[0].acceptance.push('AC-01-2');f.doc('test-results.json',result);f.ok('check');
+ result.tests[0].acceptance.push('AC-01-2');f.doc('verify/test-results.json',result);f.ok('check');
 });
 test('lean verification guidance shares suites without weakening acceptance coverage',()=>{
  const expectations={
@@ -501,12 +501,12 @@ test('lean verification guidance shares suites without weakening acceptance cove
 });
 test('optional unexecuted acceptance and unknown acceptance ids cannot satisfy coverage',t=>{
  const {f,result}=acceptanceFixture(t);
- result.tests.push({id:'manual',required:false,status:'not_run',method:'manual',acceptance:['AC-01-2']});f.doc('test-results.json',result);
+ result.tests.push({id:'manual',required:false,status:'not_run',method:'manual',acceptance:['AC-01-2']});f.doc('verify/test-results.json',result);
  assert.equal(f.run('check').code,1);
- result.tests[0].acceptance.push('AC-99-1');f.doc('test-results.json',result);assert.match(f.run('check').out,/未知验收标准.*AC-99-1/);
+ result.tests[0].acceptance.push('AC-99-1');f.doc('verify/test-results.json',result);assert.match(f.run('check').out,/未知验收标准.*AC-99-1/);
 });
 test('duplicate test ids cannot inflate a verification report',t=>{
- const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');result.tests.push({...result.tests[0]});f.doc('test-results.json',result);
+ const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');result.tests.push({...result.tests[0]});f.doc('verify/test-results.json',result);
  assert.match(f.run('check').out,/用例 ID 重复/);
 });
 test('bash verification preserves a failed pipeline status despite a success marker',t=>{
@@ -544,13 +544,13 @@ test('nested bash commands also preserve failing pipeline status',t=>{
 
 
 test('acceptance coverage records the verification method explicitly',t=>{
- const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');delete result.tests[0].method;f.doc('test-results.json',result);
- assert.match(f.run('check').out,/method.*验证方式/);result.tests[0].method='unit';f.doc('test-results.json',result);f.ok('check');
+ const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');delete result.tests[0].method;f.doc('verify/test-results.json',result);
+ assert.match(f.run('check').out,/method.*验证方式/);result.tests[0].method='unit';f.doc('verify/test-results.json',result);f.ok('check');
 });
 
 test('explicit E2E UI acceptance cases remain recordable',t=>{
  const {f,result}=acceptanceFixture(t);
- result.tests[0].acceptance.push('AC-01-2');result.tests[0].method='e2e';f.doc('test-results.json',result);f.ok('check');
+ result.tests[0].acceptance.push('AC-01-2');result.tests[0].method='e2e';f.doc('verify/test-results.json',result);f.ok('check');
 });
 
 test('execution evidence binds reviewed HTML and binary screenshots and rejects stale reuse',t=>{
@@ -559,7 +559,7 @@ test('execution evidence binds reviewed HTML and binary screenshots and rejects 
  f.doc('prototype.html','<html>approved</html>');fs.writeFileSync(path.join(f.root,png),Buffer.from([255,254,0,128]));
  const ui=fs.readFileSync(path.join(f.root,'docs/t-flow/change/test/ui.md'),'utf8').replace('mode: new',`mode: new\nprototypes: [${html}, ${png}]`);f.doc('ui.md',ui);
  f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');f.doc('plan.md','plan');
- f.doc('tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/App.vue'],acceptance:['works'],status:'pending'}]);f.ok('advance');f.pass();
+ f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/App.vue'],acceptance:['works'],status:'pending'}]);f.ok('advance');f.pass();
  const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.ok(ev.inputs[html]);assert.ok(ev.inputs[png]);
  fs.writeFileSync(path.join(f.root,png),Buffer.from([255,253,0,128]));
  f.ok('reopen','ui');f.ok('ui-use','ui-ux-pro-max');f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');f.ok('advance');
@@ -591,7 +591,7 @@ function archiveFixture(t){
  const f=fixture(t),pp=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json');
  const proto=JSON.parse(fs.readFileSync(pp));proto.config.specSyncRequired=false;fs.writeFileSync(pp,JSON.stringify(proto));
  f.setup();f.pass();f.ok('advance');f.ok('run','REQ-01','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
- f.doc('test-report.md','report');f.doc('test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});f.ok('advance');f.doc('archive-report.md','accepted');f.ok('approve','archive','accepted');return f;
+ f.doc('test-report.md','report');f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});f.ok('advance');f.doc('archive-report.md','accepted');f.ok('approve','archive','accepted');return f;
 }
 for(const point of ['copy','publish','state'])test('archive resumes interruption after '+point,t=>{
  const f=archiveFixture(t),hook=path.join(f.base,'interrupt.cjs');
@@ -637,6 +637,13 @@ test('archive resumes cleanup interrupted after source removal',t=>{
  f.ok('--change','test','archive');assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'archived');
  assert.equal(fs.existsSync(path.join(f.root,'.t-flow/runs/t-flow/test/archive-pending.json')),false);
 });
+test('change root keeps only stage Markdown and controlled directories',t=>{
+ const f=archiveFixture(t);f.doc('manual-acceptance.md','manual checks');
+ const r=f.ok('check');assert.doesNotMatch(r.out,/WARN: change 目录/);
+ const root=path.join(f.root,'docs/t-flow/change/test');
+ for(const e of fs.readdirSync(root,{withFileTypes:true}))if(e.isFile())assert.ok(e.name.endsWith('.md'),'根目录不应包含非 Markdown 文件: '+e.name);
+ for(const p of ['plan/tasks.json','verify/test-results.json'])assert.ok(fs.existsSync(path.join(root,p)),p+' 应位于阶段子目录');
+});
 test('uncontrolled change files warn without blocking or deleting history',t=>{
  const f=archiveFixture(t);
  f.doc('browser-query.js','console.log("query")');
@@ -649,7 +656,7 @@ test('uncontrolled change files warn without blocking or deleting history',t=>{
  assert.equal(fs.readFileSync(path.join(f.root,'docs/t-flow/archive/test/browser-query.js'),'utf8'),'console.log("query")');
 });
 test('verification progress never treats stale evidence as ready',t=>{
- const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');f.doc('test-results.json',result);
+ const {f,result}=acceptanceFixture(t);result.tests[0].acceptance.push('AC-01-2');f.doc('verify/test-results.json',result);
  let row=JSON.parse(f.ok('changes','--json').out)[0];assert.equal(row.status,'ready');assert.deepEqual(row.stageProgress,{kind:'required_tests',done:1,total:1});
  f.put('src/a.js','changed');row=JSON.parse(f.ok('changes','--json').out)[0];assert.equal(row.status,'blocked');assert.match(row.reason,/证据过期/);
 });

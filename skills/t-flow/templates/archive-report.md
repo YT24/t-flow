@@ -3,13 +3,13 @@
 ## 交付与验收
 
 change-id、交付范围、需求与设计差异的处理记录：
-逐条 AC 的最终结论及 test-results.json/test-report.md 链接：
+逐条 AC 的最终结论及 verify/test-results.json、test-report.md 链接：
 未测或失败项：
 必测未完成时不能写“全部验收条件达成”，不得以“手工项已列清单”代替通过证据。
 
 ## Spec 合并
 
-源/目标能力、合并内容、保留行为、spec-sync.json：
+源/目标能力、合并内容、保留行为、archive/spec-sync.json：
 无现成 Spec 目录时优先建立首个能力规范；确实不采用正式 Spec 时记录用户决定和原因。
 
 ## 已知问题与后续任务

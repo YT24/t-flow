@@ -12,7 +12,7 @@ change-id、上游澄清纪要、确认的目标与范围：
 |---|---|---|---|---|
 | REQ-01 | AC-01-1 | | | static / unit / integration / e2e / manual / build |
 
-验收编号必须在 test-results.json 的 acceptance 中逐条列出，需求覆盖不能替代验收项覆盖。
+验收编号必须在 verify/test-results.json 的 acceptance 中逐条列出，需求覆盖不能替代验收项覆盖。
 手工项也是验收标准；未执行写 not_run，不能因缺环境自动改为可选。
 
 ## 角色与授权边界

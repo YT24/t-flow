@@ -10,7 +10,7 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 运行 yt.mjs status 确认当前节点为 specify，读取已完成产物及目标项目约束。
 
 ### Steps
-从澄清纪要编写 prd.md，给每项需求稳定编号和验收标准；spec-delta.md 写 ADDED/MODIFIED/REMOVED 行为与场景；adr.md 仅记录有取舍的重要决定，无额外决定写明。不能把设计实现细节当作业务需求。本节点是用户确认门禁：check 通过后必须 stop，向用户展示 PRD 范围、需求编号与 spec-delta 变更，用确认卡片请用户点选确认（不要求回复文字），把点选文字作为确认原文用 yt.mjs approve specify 记录，未确认不得 advance。需求编号须与 verify 阶段 test-results.json 的用例 id 对应，保证可追溯。
+从澄清纪要编写 prd.md，给每项需求稳定编号和验收标准；spec-delta.md 写 ADDED/MODIFIED/REMOVED 行为与场景；adr.md 仅记录有取舍的重要决定，无额外决定写明。不能把设计实现细节当作业务需求。本节点是用户确认门禁：check 通过后必须 stop，向用户展示 PRD 范围、需求编号与 spec-delta 变更，用确认卡片请用户点选确认（不要求回复文字），把点选文字作为确认原文用 yt.mjs approve specify 记录，未确认不得 advance。需求编号须与 verify 阶段 verify/test-results.json 的用例 id 对应，保证可追溯。
 
 ### Completion reasoning
 PRD 每项验收条件使用完整 `AC-NN-N` 编号，并说明前置条件、操作、可观察结果与验证方式；页面独立/嵌入位置、角色授权边界一并明确。REQ 是能力分组，不能替代逐条 AC。只把用户可观察、需要独立交付门禁的结果定义为必测 AC；内部边界、普通异常分支及角色/对象/规则排列组合优先纳入共享自动化测试集，不默认逐组合创建 AC。相关 AC 可由同一测试套件覆盖，在 `acceptance` 数组中完整声明，不为了凑一一对应而重复执行相同测试。

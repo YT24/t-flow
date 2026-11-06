@@ -188,7 +188,7 @@
         {
           "required": true,
           "paths": [
-            "docs/t-flow/current/tasks.json"
+            "docs/t-flow/current/plan/tasks.json"
           ]
         }
       ]
@@ -216,7 +216,13 @@
         {
           "required": true,
           "paths": [
-            "docs/t-flow/current/test-results.json"
+            "docs/t-flow/current/verify/test-results.json"
+          ]
+        },
+        {
+          "required": false,
+          "paths": [
+            "docs/t-flow/current/manual-acceptance.md"
           ]
         }
       ]
@@ -233,7 +239,7 @@
         {
           "required": true,
           "paths": [
-            "docs/t-flow/current/spec-sync.json"
+            "docs/t-flow/current/archive/spec-sync.json"
           ]
         }
       ]
