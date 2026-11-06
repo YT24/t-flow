@@ -5,7 +5,7 @@ ui.md 必须含 ui-scope 声明块（mode: new|change、files、affected），�
 
 UI 阶段未选择时 status/resume/advance 输出 UI_CHOICE，提示用户跳过或选择设计 Skill。ui-use 必须显式指定名称；未记录选择不得通过 UI 检查与确认。选择记录独立于原型验收；reopen UI 或前序节点清除选择，skip ui 清除所用 Skill。
 
-验收检查：PRD 中出现 AC-NN-N 时，各用例的 acceptance 数组必须逐条覆盖全部 AC，且用于覆盖的用例须 required:true/status:passed；一个真实用例可覆盖多条相关 AC，不为每条 AC 重复执行相同套件。声明 acceptance 的用例必须记录 method（static/unit/integration/manual/build），重复用例 ID 和未知 AC 会被拒绝。REQ 覆盖关闭不影响已声明的 AC 校验；没有 AC 的旧 PRD 保持原 REQ 检查。方法与覆盖关系由执行者声明，脚本不能证明测试语义正确。
+验收检查：PRD 中出现 AC-NN-N 时，各用例的 acceptance 数组必须逐条覆盖全部 AC，且用于覆盖的用例须 required:true/status:passed；一个真实用例可覆盖多条相关 AC，不为每条 AC 重复执行相同套件。声明 acceptance 的用例必须记录 method（static/unit/integration/e2e/manual/build），重复用例 ID 和未知 AC 会被拒绝。REQ 覆盖关闭不影响已声明的 AC 校验；没有 AC 的旧 PRD 保持原 REQ 检查。方法与覆盖关系由执行者声明，脚本不能证明测试语义正确。
 
 默认精简验证：后端纯逻辑以单元测试为主，持久化验证最终数据、约束、事务或审计结果；前端默认使用构建/静态检查、少量组件测试与必要人工冒烟。同一行为只在最低有效层级验证，不在浏览器中重复后端已覆盖的全组合；已确认 AC 声明真实权限、数据或界面行为时仍须有效验证，not_run 不得视为通过。
 
@@ -22,3 +22,5 @@ ui-scope 可声明 prototypes 数组：路径须在本 change 内且是实际文
 执行证据与 attempts 中记录必须完整一致，日志必须符合 logHash。旧证据没有日志摘要时需重新执行 run，不能手工补摘要充当复验；已归档历史不自动重写。摘要用于发现意外修改，不是防篡改签名，不能证明测试本身覆盖正确。
 
 change 目录只保留受控内容：协议产物、fix-log.md、evidence/、logs/、screenshots/ 及 ui-scope.prototypes 声明的文件。验证辅助脚本必须作为 run 的命令执行并用 --input 绑定，输出由 run 写入 logs/evidence；临时探索脚本、手工 txt/json 输出和工具缓存目录用完删除或移出。check/archive 对散文件只读列出并 WARN，不自动删除、不因此阻断历史变更；归档前由执行者完成清理。
+
+E2E UI 操作验证只在用户明确要求或 AC 必须真实浏览器操作时启用，先由用户卡片选择本地隔离服务或开发环境。本地实例直连并隔离注册与数据；开发环境分支只精确提交并推送当前任务实现代码，禁止 git add -A，不包含测试脚本、工作流产物、临时文件或凭证，无法分离其他改动时停止。推送不等于部署完成，须确认开发环境运行的是该提交。访问地址和测试专用账号由用户提供，凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 仍由 run 真实执行并逐 AC 留证。

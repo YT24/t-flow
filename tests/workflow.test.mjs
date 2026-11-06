@@ -548,6 +548,11 @@ test('acceptance coverage records the verification method explicitly',t=>{
  assert.match(f.run('check').out,/method.*验证方式/);result.tests[0].method='unit';f.doc('test-results.json',result);f.ok('check');
 });
 
+test('explicit E2E UI acceptance cases remain recordable',t=>{
+ const {f,result}=acceptanceFixture(t);
+ result.tests[0].acceptance.push('AC-01-2');result.tests[0].method='e2e';f.doc('test-results.json',result);f.ok('check');
+});
+
 test('execution evidence binds reviewed HTML and binary screenshots and rejects stale reuse',t=>{
  const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');f.uiMd();
  const html='docs/t-flow/change/test/prototype.html',png='docs/t-flow/change/test/screenshot.png';

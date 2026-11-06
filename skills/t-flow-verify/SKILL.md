@@ -12,8 +12,20 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 ### Steps
 按变更影响范围选择最低有效验证层级并执行必要回归。后端纯逻辑以单元测试为主，持久化以最终数据、约束、事务或审计结果正确为主；前端默认使用构建/静态检查、少量共享组件测试与必要人工冒烟。同一行为只在一个最合适的层级验证，不在浏览器中重复后端已覆盖的角色、对象、规则全组合；已确认 AC 明确声明真实权限、数据或界面行为时仍须有效验证。测试必须通过 yt.mjs run <用例id> [--input <路径>] [--expect <正则>] [--min-output <字符数>] -- <命令> 真实执行生成 evidence，禁止手写。**用例 id 必须包含 prd.md 里对应的需求编号**（默认 REQ-NN，如 REQ-01-登录成功）：脚本强制校验每个需求编号都有 required:true 且 passed 的用例覆盖，缺项直接阻断，这就是需求→测试的可追溯性。强烈建议用 --expect 断言测试输出中的成功标志（如 "3 passed"/"0 failed"）——只靠退出码时脚本会告警，因为 run 无法判断命令语义。仅最新执行通过且证据输入未变化可复用，历史通过记录不能抵消最新失败，发生相关代码/配置/环境变化重新验证。产出 test-report.md 和 test-results.json，列明环境、版本、需求覆盖、成功/失败/未执行。浏览器、数据库等验证辅助脚本也须作为 run 的命令执行并用 --input 绑定，结果只认 evidence/logs；不在 change 目录保留手工输出文件或临时探索脚本，临时文件用完删除或移出。每个 passed 用 evidence 指向 run 生成的真实命令、日志、输入文件 hash。**用例证据必须由 verify 阶段自己 run <用例id> 生成**：不得复制其他用例的文件、也不得引用 execute 阶段的任务证据（脚本会核对证据路径 id 与内容 id 一致、要求存在对应的 attempts/<id>/<runId>.json 执行记录，并拒绝跨阶段复用）。任何 failed 项与必测 not_run 项阻断验收（可选 not_run 允许归档，须在报告中说明，但不能用于满足任何交付需求的覆盖要求）；修复需 reopen execute，重开受影响任务，不调用 verification-before-completion。验证-修复循环最多 3 次（以 reopen 时 test-results.json 存在 failed 结果计），超过后脚本拒绝 reopen：向用户展示失败历史并等待方向选择（继续修复/调整需求/停止），用户决策后用 yt.mjs decide <用户决策原文> 解除。
 
+### E2E UI 操作验证（仅显式需要时）
+默认精简验证不主动新增 E2E。只有用户明确要求 E2E，或已确认 AC 必须通过真实浏览器操作验证时，才执行本流程。先用确认卡片请用户选择环境：
+
+1. **本地启动服务测试（推荐）**：不提交或发布代码。服务不注册到共享 Nacos，或使用独立 namespace/group；直连本地实例，不经过可能路由到历史实例的服务发现。隔离数据库/schema、MQ topic 和 consumer group，由同一个 run 入口负责启动、断言和清理。
+2. **发布到开发环境测试**：先按以下边界提交并推送当前任务实现代码，再按项目既有发布链路部署。推送不等于部署成功；需要人工发布时等待用户完成，不能宣称已上线。
+
+开发环境分支的提交边界：先检查 git status/diff，按当前任务 modules 和相关实现文件精确 git add，禁止 git add -A；不得包含 E2E/测试脚本、docs/t-flow、.t-flow、evidence/logs/screenshots、临时输出或凭证。提交前用 git diff --cached 复核，提交信息带 change/task id，推送当前分支，不 force、不合并。无法清楚分离其他改动时停止并请用户整理工作树，不带出无关代码。
+
+开发环境部署后，请用户提供访问地址和测试专用账号密码再开始测试。凭证只用于本次运行，通过运行时环境变量或已有浏览器会话使用，不写入脚本、命令行、change 产物、日志或 evidence。必须确认测试实例部署的是刚推送的 commit，并断言真实界面行为；同名历史实例在线时不能仅凭 HTTP 200 判定本次实现通过。
+
+两种环境都必须通过 yt.mjs run 执行 E2E 并生成 evidence，绑定实现与测试配置输入。报告记录环境（local/dev）、访问地址、部署 commit 和逐 AC 结果，不记录账号密码。修复代码后按相同边界重新提交推送并确认部署版本，旧证据随输入变化失效。
+
 ### Completion reasoning
-**验收项是推进依据。** PRD 存在 `AC-NN-N` 时，test-results.json 的每个用例用 `acceptance` 数组逐条声明对应 AC，并记录 `method`（static/unit/integration/manual/build）；一个真实用例可覆盖多条相关 AC，不为每条 AC 重复执行相同套件。所有 AC 必须有 required:true 且 passed 的用例。REQ 全覆盖、构建成功、原型截图或 mock 单测不能代替尚未执行的真实行为验收。人工项未执行时写 not_run；环境不足仍是未测，不能自动转为可选或宣称全部通过。改变验收范围/方式先 reopen 对应阶段、更新 PRD 并重新确认。
+**验收项是推进依据。** PRD 存在 `AC-NN-N` 时，test-results.json 的每个用例用 `acceptance` 数组逐条声明对应 AC，并记录 `method`（static/unit/integration/e2e/manual/build）；一个真实用例可覆盖多条相关 AC，不为每条 AC 重复执行相同套件。所有 AC 必须有 required:true 且 passed 的用例。REQ 全覆盖、构建成功、原型截图或 mock 单测不能代替尚未执行的真实行为验收。人工项未执行时写 not_run；环境不足仍是未测，不能自动转为可选或宣称全部通过。改变验收范围/方式先 reopen 对应阶段、更新 PRD 并重新确认。
 
 执行命令保留完整输出和真实退出码。run 对 Bash 启用 errexit/pipefail 并传递给嵌套 Bash；其他解释器需自行保证失败传播。`--expect` 可重复，每次是一个必须满足的条件；不能把 `A|B|C` 当作三项全部通过。用 `--reject <正则>` 排除明确失败输出（如 BUILD FAILURE）；grep 数量后必须断言数值，不能仅打印统计或 echo OK。预期失败场景使用测试框架断言或 if 分支处理，不靠隐藏失败制造成功退出。
 
