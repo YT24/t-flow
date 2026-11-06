@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workflow": "t-flow",
-  "protocolHash": "c74fccd3d2ceb7a10d3330775db8f105be54acc7c78c0096ce7e90ad0af6877c",
+  "protocolHash": "855b0e6ba7fb5093b61b11c04c6669cc7272c0eccb2c24ca4f211c2aa2f5940e",
   "changeId": "explicit-workflow-invocation",
   "currentNode": "clarify",
   "completedNodes": [],
@@ -13,7 +13,11 @@
     {
       "action": "init",
       "at": "2026-10-26T09:17:11.708Z"
+    },
+    {
+      "action": "migrate",
+      "at": "2026-10-30T01:44:06.675Z"
     }
   ],
-  "updatedAt": "2026-10-26T09:17:11.708Z"
+  "updatedAt": "2026-10-30T01:44:06.675Z"
 }

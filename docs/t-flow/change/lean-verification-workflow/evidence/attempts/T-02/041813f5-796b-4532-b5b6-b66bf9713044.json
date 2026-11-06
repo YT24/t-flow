@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "id": "T-02",
+  "runId": "041813f5-796b-4532-b5b6-b66bf9713044",
+  "node": "execute",
+  "directories": {},
+  "changeId": "lean-verification-workflow",
+  "status": "passed",
+  "command": "node --test --test-name-pattern 'lean verification guidance' tests/workflow.test.mjs",
+  "exitCode": 0,
+  "signal": null,
+  "recordedAt": "2026-10-30T01:49:25.460Z",
+  "inputs": {
+    "docs/t-flow/change/lean-verification-workflow/clarify-log.md": "a9fe0e6dae43881b440454e5650527ec44b1927c865f4cc7e5c6f10392c13ae1",
+    "docs/t-flow/change/lean-verification-workflow/prd.md": "01135580f9e17704321dd6d5177bfa3521e847a7d46a90e4aebbae173e0c2e71",
+    "docs/t-flow/change/lean-verification-workflow/adr.md": "e6d36cf1e1101367ef58e4dacc99cb323f6afe7c1184bf15d9619ee7680d7fa2",
+    "docs/t-flow/change/lean-verification-workflow/spec-delta.md": "d196f137346083bf2a0803f1bbc8af06c1a5b10be8dbaf82042b8cb55bcfef14",
+    "docs/t-flow/change/lean-verification-workflow/plan.md": "304c22f64c88435fab98769e01b961feffbee0409e9e69f457866fd195e2f591",
+    "tests/workflow.test.mjs": "2d71c1cc23debd249d05038a7f2e4398fa663987fff6a7ceae5cff7ea883348f",
+    "skills/t-flow/templates/prd.md": "96a11a3cd29b8942c24d090ad084ccfb7e8a1cecf4f005d8d5c5a300423e8e09",
+    "skills/t-flow/templates/design.md": "46971dbb1dbc76300348e2ac2dfeff994c9a71f43cbfa7345cbaa39781b0a5b1",
+    "skills/t-flow/templates/test-results.json": "da9e17b41691d1d8401f2cb24c224a50e5a6543e5dc252f60d7fe090b30f0c8d",
+    "skills/t-flow/templates/test-report.md": "b9bdee7e97046c8118f28c31cd17714d313aaea29d82a3a0e2fd64f0f730de15",
+    "skills/t-flow/reference/runtime-contract.md": "bbd3a3b7d475a316ed9cee0ffb0472311be9d22b6eb90bcaeecf08be76415997",
+    "README.md": "59ed6b24f63ae118f40bf5f9e411d2a1ea63d1f2b6b0ba9d5db666ede8237458"
+  },
+  "log": "docs/t-flow/change/lean-verification-workflow/logs/T-02-041813f5-796b-4532-b5b6-b66bf9713044.log",
+  "logHash": "912785d077cf975d66dd1f211acb8d93c35b53908d8d11c50ee84b169cb0f123",
+  "expects": [
+    "pass 1",
+    "fail 0"
+  ]
+}

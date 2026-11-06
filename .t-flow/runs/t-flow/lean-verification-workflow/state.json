@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workflow": "t-flow",
-  "protocolHash": "c74fccd3d2ceb7a10d3330775db8f105be54acc7c78c0096ce7e90ad0af6877c",
+  "protocolHash": "855b0e6ba7fb5093b61b11c04c6669cc7272c0eccb2c24ca4f211c2aa2f5940e",
   "changeId": "lean-verification-workflow",
   "currentNode": "archive",
   "completedNodes": [
@@ -12,21 +12,21 @@
     "verify"
   ],
   "completedHashes": {
-    "clarify": "4ed73cf18535912355b73846dd1fe890b92cc7dbc876d16eef1612cacb7676a4",
-    "specify": "fa3f60b73db0f9736977ebdc1c764adbfe2335dd9306b5f3b43daf94b892792f",
-    "plan": "db287a27413e2671aff02c1cac9cd8371340a58d1a7b092f23532596c13a2db8",
-    "execute": "db287a27413e2671aff02c1cac9cd8371340a58d1a7b092f23532596c13a2db8",
-    "verify": "5224a6f7158b43cf6ebccebef8e8fa3b74d4b032da47e787826bc247f0a44866"
+    "clarify": "94dcb9dacd7d68d27fdbc8f5fa168feca5c5b743a1c951a09813f2dbee6909ac",
+    "specify": "4242c50dd50720c6b65be7d1ffab018040335ee9bfc4c418c7ea14cbd11dfdbf",
+    "plan": "818182dd33c3c1a4ea58a3bd43e0d02e3dcc1aca71dcd9adad3879f94fb00303",
+    "execute": "818182dd33c3c1a4ea58a3bd43e0d02e3dcc1aca71dcd9adad3879f94fb00303",
+    "verify": "ba970a205bca30369e689287fb93acd631ab2602948910287c4746068b5d64e8"
   },
   "approvals": {
     "clarify": {
       "quote": "按这个范围继续修改。",
-      "fingerprint": "4ed73cf18535912355b73846dd1fe890b92cc7dbc876d16eef1612cacb7676a4",
+      "fingerprint": "94dcb9dacd7d68d27fdbc8f5fa168feca5c5b743a1c951a09813f2dbee6909ac",
       "at": "2026-10-28T08:46:30.625Z"
     },
     "specify": {
       "quote": "确认",
-      "fingerprint": "fa3f60b73db0f9736977ebdc1c764adbfe2335dd9306b5f3b43daf94b892792f",
+      "fingerprint": "4242c50dd50720c6b65be7d1ffab018040335ee9bfc4c418c7ea14cbd11dfdbf",
       "at": "2026-10-28T08:49:24.752Z"
     }
   },
@@ -141,7 +141,63 @@
     {
       "action": "advance verify",
       "at": "2026-10-28T09:02:39.618Z"
+    },
+    {
+      "action": "migrate",
+      "at": "2026-10-30T01:44:06.761Z"
+    },
+    {
+      "action": "reopen verify",
+      "at": "2026-10-30T01:45:36.795Z"
+    },
+    {
+      "action": "run REQ-05-regression=passed",
+      "at": "2026-10-30T01:46:15.657Z"
+    },
+    {
+      "action": "run REQ-01-REQ-02-REQ-03-REQ-04-lean-guidance=passed",
+      "at": "2026-10-30T01:46:15.784Z"
+    },
+    {
+      "action": "reopen execute",
+      "at": "2026-10-30T01:48:50.404Z"
+    },
+    {
+      "action": "run T-01=failed",
+      "at": "2026-10-30T01:48:50.491Z"
+    },
+    {
+      "action": "run T-01=passed",
+      "at": "2026-10-30T01:49:25.301Z"
+    },
+    {
+      "action": "task T-01=done",
+      "at": "2026-10-30T01:49:25.343Z"
+    },
+    {
+      "action": "run T-02=passed",
+      "at": "2026-10-30T01:49:25.461Z"
+    },
+    {
+      "action": "task T-02=done",
+      "at": "2026-10-30T01:49:25.500Z"
+    },
+    {
+      "action": "run T-03=passed",
+      "at": "2026-10-30T01:50:02.445Z"
+    },
+    {
+      "action": "task T-03=done",
+      "at": "2026-10-30T01:50:02.489Z"
+    },
+    {
+      "action": "advance execute",
+      "at": "2026-10-30T01:50:02.534Z"
+    },
+    {
+      "action": "advance verify",
+      "at": "2026-10-30T01:50:10.265Z"
     }
   ],
-  "updatedAt": "2026-10-28T09:02:39.618Z"
+  "updatedAt": "2026-10-30T01:50:10.265Z"
 }
