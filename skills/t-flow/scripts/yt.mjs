@@ -11,7 +11,7 @@ const pkg=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const protocol=JSON.parse(fs.readFileSync(path.join(pkg,'reference/workflow-protocol.json')));
 const nodes=protocol.nodes.filter(n=>!n.disabled);
 const cfg=protocol.config||{};
-const SPEC_PREFIX=cfg.specTargetPrefix??'openspec/specs/';
+const SPEC_PREFIX=cfg.specTargetPrefix??'docs/t-flow/openspec/specs/';
 const SPEC_REQUIRED=cfg.specSyncRequired!==false;
 // 需求编号模式与覆盖校验：PRD 里的需求编号必须被 test-results.json 中已通过必测用例的 id 覆盖，
 // 否则"必测项"完全由被测方自定义，需求与测试之间没有可追溯性（历史缺陷）。
@@ -290,12 +290,31 @@ function treeManifest(dir){
  }}
  walk(dir);return result;
 }
+// change 目录只保留受控产物。辅助脚本/手工输出不在证据链内，只警告不删除，避免影响历史变更。
+function uncontrolledChangeFiles(cid){
+ const base=changeDocDir(cid);if(!fs.existsSync(safe(base)))return [];
+ const allowed=new Set(protocol.outputSchemas.flatMap(sc=>sc.artifacts).flatMap(a=>a.paths).map(p=>mapArt(cid,p).slice(base.length+1)));
+ allowed.add('fix-log.md');
+ const ui=base+'/ui.md';
+ if(fs.existsSync(safe(ui))){try{for(const p of parseUiScope(read(ui))?.prototypes||[]){const n=path.normalize(p).split(path.sep).join('/');if(n.startsWith(base+'/'))allowed.add(n.slice(base.length+1));}}catch{}}
+ const controlledDirs=new Set(['evidence','logs','screenshots']),out=[];
+ function walk(rel){for(const e of fs.readdirSync(safe(rel),{withFileTypes:true})){
+  const p=rel+'/'+e.name,r=p.slice(base.length+1);
+  if(e.isDirectory()){if(rel===base&&controlledDirs.has(e.name))continue;walk(p);}
+  else if(!allowed.has(r))out.push(r);
+ }}
+ walk(base);return out.sort();
+}
+function warnUncontrolledChangeFiles(cid){
+ const stray=uncontrolledChangeFiles(cid);if(!stray.length)return;
+ console.error('WARN: change 目录存在未受控文件（非协议产物，且不在 evidence/logs/screenshots 或 ui-scope prototypes 中）:\n'+stray.map(p=>'- '+p).join('\n')+'\n请删除或移出 change 目录；验证辅助脚本应作为 run 的命令并用 --input 绑定，输出由 run 写入 logs/evidence，不保留手工输出文件。');
+}
 function archiveChange(s){
  const source=changeDocDir(s.changeId),destination=DOC_BASE+'/archive/'+s.changeId,jp=archiveJournal(s.changeId),stage=destination+'.pending';
  if(!fs.existsSync(safe(jp))){
   if(!s.currentNode){if(s.archivePath!==destination||!fs.existsSync(safe(destination+'/workflow-state.json')))throw Error('归档状态不完整，请 doctor');print(s);return;}
   if(s.currentNode!=='archive')throw Error('当前不是归档阶段');
-  drift(s);validate(s,'archive');
+  drift(s);validate(s,'archive');warnUncontrolledChangeFiles(s.changeId);
   if(fs.existsSync(safe(destination))||fs.existsSync(safe(stage)))throw Error('归档目录已存在');
   const manifest=treeManifest(source);
   if(Object.hasOwn(manifest,'workflow-state.json'))throw Error('workflow-state.json 为归档保留文件名');
@@ -762,7 +781,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     t.status=value;write(docDir()+'/tasks.json',ts);save(s,'task '+arg+'='+value);print(s);
    }else if(['check','advance'].includes(cmd)){
     validate(s,s.currentNode,{approval:cmd!=='check'});
-    if(cmd==='check'){console.log(APPROVAL_NODES.includes(s.currentNode)&&s.approvals[s.currentNode]?.fingerprint!==fingerprint(s,s.currentNode)?'ARTIFACTS_READY: 等待用户确认':'READY');print(s);}
+    if(cmd==='check'){warnUncontrolledChangeFiles(s.changeId);console.log(APPROVAL_NODES.includes(s.currentNode)&&s.approvals[s.currentNode]?.fingerprint!==fingerprint(s,s.currentNode)?'ARTIFACTS_READY: 等待用户确认':'READY');print(s);}
     else if(s.currentNode==='archive'){throw Error('归档请运行 archive');
     }else{
      const from=s.currentNode;if(from==='verify')s.verifyFailures=0;

@@ -20,3 +20,5 @@ ui-scope 可声明 prototypes 数组：路径须在本 change 内且是实际文
 归档先保存 archive-pending.json 恢复记录和文件摘要，再复制到 archive/<id>.pending、核对内容并原子改名，最后保存状态并清理源目录。中断后使用 `--change <id> archive` 重试；已完成归档重试幂等。待恢复时禁止其他修改命令。发现文件或状态与恢复记录不一致时保留现场并阻断；不接管无恢复记录的同名目录。归档后保留 active 的选择，后续新任务用 init、其他任务用 resume 明确选择。
 
 执行证据与 attempts 中记录必须完整一致，日志必须符合 logHash。旧证据没有日志摘要时需重新执行 run，不能手工补摘要充当复验；已归档历史不自动重写。摘要用于发现意外修改，不是防篡改签名，不能证明测试本身覆盖正确。
+
+change 目录只保留受控内容：协议产物、fix-log.md、evidence/、logs/、screenshots/ 及 ui-scope.prototypes 声明的文件。验证辅助脚本必须作为 run 的命令执行并用 --input 绑定，输出由 run 写入 logs/evidence；临时探索脚本、手工 txt/json 输出和工具缓存目录用完删除或移出。check/archive 对散文件只读列出并 WARN，不自动删除、不因此阻断历史变更；归档前由执行者完成清理。

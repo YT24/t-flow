@@ -159,6 +159,8 @@ PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。只把用户可观�
 
 独立原型和评审截图使用 `ui-scope.prototypes` 声明，文件保存到当前 change 内，参与 UI 确认指纹；改动后须重新确认。旧 ui.md 未声明 prototypes 时保持兼容，新版生成原型时须声明。证据报告区分静态检查、mock 单测、原型演示和真实页面/API/数据库测试，未测写 not_run。脚本核对声明、指纹和执行结果，仍不能判断测试是否忠实覆盖业务语义。
 
+change 目录不是临时工作区：只保留协议产物、`fix-log.md`、`evidence/`、`logs/`、`screenshots/` 和 `ui-scope.prototypes` 声明的文件。浏览器、数据库等验证辅助脚本作为 `run` 的命令执行并用 `--input` 绑定，输出由 `run` 写入 `logs/`、`evidence/`；临时探索脚本、手工输出和工具缓存用完删除或移出。`check`/`archive` 对散文件只读告警，不自动删除，也不阻断历史变更；归档前应完成清理。
+
 基于 RBAC 旧产物的具体审查见 [文档产物审查报告](docs/reviews/2026-10-14-rbac-workflow-artifacts-review.md)。
 
 ### 查看所有 change 的状态与恢复中断
