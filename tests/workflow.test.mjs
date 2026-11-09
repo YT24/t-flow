@@ -513,6 +513,12 @@ test('browser verification is opt-in and batches related AC in one session',()=>
  const ui=fs.readFileSync(new URL('../skills/t-flow-ui/SKILL.md',import.meta.url),'utf8');
  for(const phrase of ['不逐状态启动浏览器','共用一次浏览器会话批量验证'])assert.ok(ui.includes(phrase),'ui missing: '+phrase);
 });
+test('small changes select affected tests instead of full regression by default',()=>{
+ const read=f=>fs.readFileSync(new URL('../'+f,import.meta.url),'utf8');
+ for(const phrase of ['影响范围映射','最小验证命令','不得触发全量测试'])assert.ok(read('skills/t-flow-plan/SKILL.md').includes(phrase),'plan missing: '+phrase);
+ for(const phrase of ['不默认全量测试','报告中写明原因'])assert.ok(read('skills/t-flow-verify/SKILL.md').includes(phrase),'verify missing: '+phrase);
+ for(const phrase of ['验证范围选择','未执行全量回归'])assert.ok(read('skills/t-flow/templates/test-report.md').includes(phrase),'report template missing: '+phrase);
+});
 test('optional unexecuted acceptance and unknown acceptance ids cannot satisfy coverage',t=>{
  const {f,result}=acceptanceFixture(t);
  result.tests.push({id:'manual',required:false,status:'not_run',method:'manual',acceptance:['AC-01-2']});f.doc('verify/test-results.json',result);
