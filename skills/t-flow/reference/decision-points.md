@@ -6,4 +6,4 @@
 
 验证-修复循环超限时，向用户展示失败历史并用卡片让其点选方向（继续修复/调整需求/停止），把点选文字用 decide 记录后解除。
 
-UI 开始前先展示是否跳过以及所用设计 Skill 的选择（ui-ux-pro-max 推荐、frontend-design、跳过）。推荐项不等于用户批准；没有既有明确选择时等待用户回答，选择后用 ui-use <Skill名> 或 skip ui <原因> 记录。status/resume 会在 UI 未选择时输出 UI_CHOICE，已选择时输出 UI_SELECTED；原型完成后的 approve ui 仍是独立验收。
+UI 默认主 Skill，用户已有偏好优先；工具选择不新增停顿，原型确认保留。轻量模式只有 specify/archive 两次确认。完整模式可在 clarify 同时准备纪要与 PRD/ADR/spec-delta，展示整体后 approve scope 一次确认两阶段；指纹分别绑定，任一产物变动仍失效。

@@ -16,6 +16,12 @@
   "inputs": {
     "相关源文件": "SHA256"
   },
+  "semantic": {
+    "acceptance": ["AC-01-1"],
+    "hashes": {
+      "关联 AC/设计/计划段落": "SHA256（可选；无完整 AC 时不生成）"
+    }
+  },
   "log": "docs/t-flow/change/<change-id>/logs/example-<runId>.log",
   "logHash": "run 自动生成的日志原始字节 SHA256"
 }

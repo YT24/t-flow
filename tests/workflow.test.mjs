@@ -38,6 +38,51 @@ test('default state output is compact and full status remains available',t=>{
  assert.equal(full.currentNode,'verify');assert.ok(Array.isArray(full.history));assert.ok(full.approvals.specify);
  const normal=f.ok('status').out;assert.match(normal,/STATE: /);assert.match(normal,/SUMMARY: /);assert.doesNotMatch(normal,/"history"/);
 });
+test('run warns against repeated evidence registration during debugging',t=>{
+ const f=fixture(t);f.setup();
+ const args=['T-01','--force','--expect','PASS','--',process.execPath,'-e','console.log("PASS")'];
+ f.ok('run',...args);f.ok('run',...args);
+ const r=f.ok('run',...args);assert.match(r.out,/已有 2 次执行记录/);assert.match(r.out,/普通 Shell/);
+});
+test('valid evidence skips duplicate run unless explicitly forced',t=>{
+ const f=fixture(t);f.setup();f.pass();
+ const dir=path.join(f.root,'docs/t-flow/change/test/evidence/attempts/T-01'),before=fs.readdirSync(dir).length;
+ const args=['T-01','--expect','PASS','--',process.execPath,'-e','console.log("PASS")'];
+ const r=f.ok('run',...args);assert.match(r.out,/EVIDENCE_VALID/);assert.equal(fs.readdirSync(dir).length,before);
+ f.ok('run','T-01','--force','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');assert.equal(fs.readdirSync(dir).length,before+1);
+});
+test('build outputs do not invalidate directory evidence while source changes do',t=>{
+ const f=fixture(t);f.setup();f.put('src/target/generated.js','old');f.pass();
+ f.put('src/target/generated.js','changed');f.ok('check');
+ f.put('src/a.js','changed');assert.equal(f.run('check').code,1);
+});
+test('required artifacts reject assigned secrets without echoing them',t=>{
+ const f=fixture(t);f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('approve','clarify','confirmed');f.ok('advance');
+ for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');f.ok('approve','specify','confirmed');f.ok('advance');f.ok('skip','ui','no UI');f.ok('skip','design','small');
+ f.put('src/a.js','export const a=1;');f.doc('plan.md','password=supersecret');f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['works'],status:'pending'}]);
+ const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/疑似凭证不得落盘/);assert.doesNotMatch(r.out,/supersecret/);
+});
+test('secret command output fails evidence and is not written to logs',t=>{
+ const f=fixture(t);f.setup();
+ const r=f.run('run','T-01','--',process.execPath,'-e','console.log(["pass","word"].join("")+"="+["super","secret"].join(""))');assert.equal(r.code,1);
+ const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.equal(ev.status,'failed');
+ assert.doesNotMatch(fs.readFileSync(path.join(f.root,ev.log),'utf8'),/supersecret/);
+});
+test('semantic evidence ignores unrelated plan edits but expires on linked AC change',t=>{
+ const f=fixture(t),prd=first=>'REQ-01\n| REQ | AC | expected |\n|---|---|---|\n| REQ-01 | AC-01-1 | '+first+' |\n| REQ-01 | AC-01-2 | second behavior |';
+ const plan=second=>'| task | AC | command |\n|---|---|---|\n| T-01 | AC-01-1 | unit one |\n| T-02 | AC-01-2 | '+second+' |';
+ f.setup(prd('first behavior'));f.ok('reopen','plan');f.doc('plan.md',plan('unit two'));
+ f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src'],acceptance:['AC-01-1'],status:'pending'}]);f.ok('advance');f.pass();
+ const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.ok(ev.semantic);assert.ok(ev.semantic.hashes['docs/t-flow/change/test/plan.md']);
+ f.ok('reopen','plan');f.doc('plan.md',plan('revised unrelated task'));f.ok('advance');f.ok('check');
+ f.ok('reopen','specify');f.doc('prd.md',prd('changed linked behavior'));f.ok('approve','specify','confirmed');f.ok('advance');f.ok('skip','ui','no UI');f.ok('skip','design','small');f.ok('advance');
+ const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/关联的需求/);
+});
+test('verification guidance separates debugging from evidence registration',()=>{
+ const read=f=>fs.readFileSync(new URL('../'+f,import.meta.url),'utf8');
+ for(const phrase of ['调试与登记分离','稳定通过后再用 run 登记一次','集中连续登记'])assert.ok(read('skills/t-flow/reference/verification.md').includes(phrase),'verification missing: '+phrase);
+ assert.ok(read('skills/t-flow-plan/SKILL.md').includes('公共模块改动前置'));
+});
 test('failed rerun blocks advancement and preserves separate attempt logs',t=>{const f=fixture(t);f.setup();f.pass();const old=f.read('docs/t-flow/change/test/evidence/T-01.json');assert.equal(f.run('run','T-01','--',process.execPath,'-e','process.exit(1)').code,1);assert.equal(f.run('check').code,1);assert.match(fs.readFileSync(path.join(f.root,old.log),'utf8'),/PASS/);assert.notEqual(f.read('docs/t-flow/change/test/evidence/T-01.json').log,old.log);f.pass();f.ok('check');});
 for(const change of ['add','delete'])test('directory evidence detects '+change+' files',t=>{const f=fixture(t);f.setup();f.pass();if(change==='add')f.put('src/new.js','new source');else fs.unlinkSync(path.join(f.root,'src/a.js'));assert.equal(f.run('check').code,1);});
 test('migration rolls changed approved artifacts back for fresh confirmation',t=>{const f=fixture(t);f.setup();f.doc('prd.md','REQ-01 changed');const p=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json');const proto=JSON.parse(fs.readFileSync(p));proto.comment+=' updated';fs.writeFileSync(p,JSON.stringify(proto));f.ok('migrate');const s=f.read('.t-flow/runs/t-flow/test/state.json');assert.equal(s.currentNode,'specify');assert.equal(s.approvals.specify,undefined);assert.equal(f.run('advance').code,1);});
@@ -198,7 +243,7 @@ test('change mode must declare affected existing interfaces',t=>{
  f.uiMd({mode:'change',files:['src/App.vue'],affected:['src/pages/Old.vue']});
  assert.equal(f.run('check').code,0);
 });
-test('ui-scope files are force-bound even when missing from task modules',t=>{
+test('unrelated UI edits do not invalidate backend task evidence',t=>{
  const f=fixture(t);
  f.ok('init','test');f.doc('clarify-log.md','scope');f.ok('approve','clarify','confirmed');f.ok('advance');
  for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01 behavior':'content');
@@ -210,11 +255,11 @@ test('ui-scope files are force-bound even when missing from task modules',t=>{
  f.ok('advance');
  f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');
- assert.ok(ev.inputs['src/App.vue'],'ui-scope 声明的文件应被强制计入证据输入');
+ assert.equal(ev.inputs['src/App.vue'],undefined);
  f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');
  // 改动已确认的界面文件 -> 证据必须过期
  f.put('src/App.vue','export default {changed:true};');
- const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/验证证据过期: src\/App\.vue/);
+ f.ok('check');
 });
 test('affected interfaces are bound too, so declared impact cannot be bypassed',t=>{
  const f=fixture(t);
@@ -226,7 +271,7 @@ test('affected interfaces are bound too, so declared impact cannot be bypassed',
  f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
  f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
  f.ok('advance');
- f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.ok('run','T-01','--input','src/api.js','--input','src/pages/Old.vue','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  const ev=f.read('docs/t-flow/change/test/evidence/T-01.json');
  assert.ok(ev.inputs['src/pages/Old.vue'],'affected 声明的既有界面也应被绑定');
  f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');
@@ -264,7 +309,7 @@ test('adding a new page is detected through the ui-scope directory binding',t=>{
  f.doc('plan.md','plan');f.put('src/api.js','export const x=1;');
  f.doc('plan/tasks.json',[{id:'T-01',title:'task',dependsOn:[],modules:['src/api.js'],acceptance:['works'],status:'pending'}]);
  f.ok('advance');
- f.ok('run','T-01','--input','src/api.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.ok('run','T-01','--input','src/api.js','--input','src/pages','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
  f.ok('task','T-01','in_progress');f.ok('task','T-01','done','docs/t-flow/change/test/evidence/T-01.json');
  f.put('src/pages/NewPage.vue','export default {};');
  const r=f.run('check');assert.equal(r.code,1);assert.match(r.out,/验证证据目录已变化: src\/pages/);
@@ -508,7 +553,7 @@ test('lean verification guidance shares suites without weakening acceptance cove
  }
 });
 test('browser verification is opt-in and batches related AC in one session',()=>{
- const verify=fs.readFileSync(new URL('../skills/t-flow-verify/SKILL.md',import.meta.url),'utf8');
+ const verify=fs.readFileSync(new URL('../skills/t-flow/reference/e2e.md',import.meta.url),'utf8');
  for(const phrase of ['不主动新增 E2E','共用一个 Playwright 套件和浏览器会话','不为每条 AC 单独写脚本','截图只在失败定位'])assert.ok(verify.includes(phrase),'verify missing: '+phrase);
  const ui=fs.readFileSync(new URL('../skills/t-flow-ui/SKILL.md',import.meta.url),'utf8');
  for(const phrase of ['不逐状态启动浏览器','共用一次浏览器会话批量验证'])assert.ok(ui.includes(phrase),'ui missing: '+phrase);
@@ -690,4 +735,110 @@ test('status distinguishes an abandoned lock from a running command',t=>{
  const f=fixture(t);f.setup();f.put('.t-flow/runs/t-flow/test/write.lock',{pid:2147483647,host:os.hostname()});
  assert.equal(JSON.parse(f.ok('changes','--json').out)[0].status,'locked');
  assert.equal(f.run('reopen','plan').code,1);
+});
+
+for(const mutation of ['none','source','directory','log','runId','command','environment','latestFailure'])test('explicit execute reuse validates '+mutation,t=>{
+ const f=fixture(t);f.setup();f.pass();
+ const ep='docs/t-flow/change/test/evidence/T-01.json',ev=f.read(ep);
+ if(mutation==='latestFailure')assert.equal(f.run('run','T-01','--',process.execPath,'-e','process.exit(1)').code,1);
+ // Enter verify before mutating the bound inputs; failed latest run is tested there too.
+ if(mutation==='latestFailure'){
+  const state=f.read('.t-flow/runs/t-flow/test/state.json');state.currentNode='verify';f.put('.t-flow/runs/t-flow/test/state.json',state);
+ }else f.ok('advance');
+ const reuse={runId:ev.runId,command:ev.command,environmentUnchanged:true,reason:'same local environment and suite'};
+ if(mutation==='source')f.put('src/a.js','changed');
+ if(mutation==='directory')f.put('src/new.js','new');
+ if(mutation==='log')f.put(ev.log,'tampered');
+ if(mutation==='runId')reuse.runId='wrong';
+ if(mutation==='command')reuse.command='wrong';
+ if(mutation==='environment')reuse.environmentUnchanged=false;
+ f.doc('test-report.md','reused execute suite');
+ f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:ep,reuse}]});
+ const result=f.run('check');assert.equal(result.code,mutation==='none'?0:1,result.out);
+});
+
+// Cost controls retain delivery checks while avoiding duplicate work.
+test('verify suites can be reused by several cases without rerunning',t=>{
+ const f=fixture(t);f.setup('REQ-01 AC-01-1 AC-01-2');f.pass();f.ok('advance');
+ f.ok('run','shared-suite','--input','src','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ const ep='docs/t-flow/change/test/evidence/shared-suite.json',ev=f.read(ep);
+ const reuse={runId:ev.runId,command:ev.command,environmentUnchanged:true,reason:'same suite and local environment'};
+ f.doc('test-report.md','shared suite');
+ f.doc('verify/test-results.json',{changeId:'test',tests:[1,2].map(n=>({id:'REQ-01-case-'+n,required:true,status:'passed',method:'unit',acceptance:['AC-01-'+n],evidence:ep,reuse}))});
+ f.ok('check');assert.equal(fs.readdirSync(path.join(f.root,'docs/t-flow/change/test/evidence/attempts/shared-suite')).length,1);
+ f.put('src/a.js','changed');assert.match(f.run('check').out,/过期/);
+});
+
+test('new UI paths may be planned but delivery requires covered real implementation',t=>{
+ const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');
+ f.doc('ui.md','```ui-scope\nmode: new\nfiles: [src/New.vue]\naffected: []\n```');
+ f.ok('approve','ui','confirmed');f.ok('advance');f.ok('skip','design','small');
+ f.doc('plan.md','plan');f.put('src/backend.js','backend');
+ f.doc('plan/tasks.json',[{id:'T-01',title:'backend',dependsOn:[],modules:['src/backend.js'],acceptance:['AC-01-1'],status:'pending'}]);f.ok('advance');f.pass();f.ok('advance');
+ f.ok('run','REQ-01','--input','src/backend.js','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');
+ f.doc('test-report.md','report');f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',evidence:'docs/t-flow/change/test/evidence/REQ-01.json'}]});
+ assert.match(f.run('check').out,/路径不存在/);
+ f.put('src/New.vue','page');assert.match(f.run('check').out,/缺少必测证据输入覆盖/);
+ f.ok('run','REQ-01','--input','src/New.vue','--expect','PASS','--',process.execPath,'-e','console.log("PASS")');f.ok('check');
+ // Changing the page invalidates only its suite, not the backend task.
+ f.put('src/New.vue','page changed');
+ const ctx=JSON.parse(f.ok('context').out);
+ assert.equal(ctx.evidence.find(e=>e.id==='T-01').status,'valid');
+ assert.equal(ctx.evidence.find(e=>e.id==='REQ-01').status,'invalid');
+ assert.match(f.run('advance').out,/过期/);
+});
+
+test('context selects ready tasks and AC lines without changing state or reading logs into output',t=>{
+ const f=fixture(t);f.setup('REQ-01\nAC-01-1 first\nAC-01-10 unrelated');
+ f.ok('reopen','plan');const ts=f.read('docs/t-flow/change/test/plan/tasks.json');ts[0].acceptance=['AC-01-1'];f.doc('plan/tasks.json',ts);f.ok('advance');
+ const before=f.read('.t-flow/runs/t-flow/test/state.json');
+ const c=JSON.parse(f.ok('context').out);assert.equal(c.task.id,'T-01');assert.equal(c.acceptance.length,1);assert.equal(c.acceptance[0].line,2);assert.equal(c.next,'task T-01 in_progress');
+ assert.deepEqual(f.read('.t-flow/runs/t-flow/test/state.json'),before);
+ f.pass();f.put('src/a.js','changed');const stale=JSON.parse(f.ok('context').out);assert.equal(stale.evidence[0].status,'invalid');assert.match(stale.next,/run T-01/);
+ assert.equal(f.run('context','missing').code,1);
+});
+
+test('combined scope approval binds both artifacts and does not survive a PRD edit',t=>{
+ const f=fixture(t);f.ok('init','test');f.doc('clarify-log.md','scope');
+ assert.equal(f.run('approve','scope','confirmed').code,1);
+ for(const p of ['prd.md','adr.md','spec-delta.md'])f.doc(p,p==='prd.md'?'REQ-01':'content');
+ f.ok('approve','scope','confirmed');f.ok('advance');f.ok('advance');
+ f.ok('reopen','clarify');f.ok('approve','scope','confirmed');f.ok('advance');f.doc('prd.md','REQ-01 changed');
+ assert.match(f.run('advance').out,/确认已失效/);
+});
+
+function liteFixture(t){
+ const f=fixture(t);f.ok('init','test','--lite','local copy fix; no contracts changed');
+ f.doc('prd.md','REQ-01 AC-01-1 fix');f.ok('approve','specify','confirmed');f.ok('advance');
+ f.doc('plan.md','AC-01-1 -> src -> test');f.put('src/a.js','source');
+ f.doc('plan/tasks.json',[{id:'T-01',title:'fix',dependsOn:[],modules:['src/a.js'],acceptance:['AC-01-1'],status:'pending'}]);f.ok('advance');return f;
+}
+
+test('lite workflow archives with real coverage and two approvals, without unused documents',t=>{
+ const f=liteFixture(t);f.pass();f.ok('advance');
+ const ep='docs/t-flow/change/test/evidence/T-01.json',ev=f.read(ep);
+ f.doc('test-report.md','reuse unit suite');f.doc('verify/test-results.json',{changeId:'test',tests:[{id:'REQ-01',required:true,status:'passed',acceptance:['AC-01-1'],method:'unit',evidence:ep,reuse:{runId:ev.runId,command:ev.command,environmentUnchanged:true,reason:'same scope and environment'}}]});
+ f.ok('advance');f.doc('archive-report.md','accepted');assert.equal(f.run('archive').code,1);f.ok('approve','archive','accepted');f.ok('archive');f.ok('archive');f.ok('doctor');
+ const state=f.read('.t-flow/runs/t-flow/test/state.json');assert.deepEqual(Object.keys(state.approvals),['specify','archive']);assert.equal(state.completedNodes.length,5);
+ for(const name of ['adr.md','spec-delta.md','design.md','ui.md','clarify-log.md','archive/spec-sync.json'])assert.equal(fs.existsSync(path.join(f.root,'docs/t-flow/archive/test',name)),false);
+});
+
+test('lite mode promotion preserves work but requires full scope confirmation',t=>{
+ const f=liteFixture(t);f.pass();f.ok('promote','new permission rules');const state=f.read('.t-flow/runs/t-flow/test/state.json');
+ assert.equal(state.profile,'full');assert.equal(state.currentNode,'clarify');assert.deepEqual(state.approvals,{});assert.equal(f.run('advance').code,1);
+ assert.ok(fs.existsSync(path.join(f.root,'docs/t-flow/change/test/evidence/T-01.json')));
+ assert.equal(f.run('reopen','verify').code,1);
+});
+
+test('mixed full and lite summaries and migration retain independent profiles',t=>{
+ const f=liteFixture(t);f.ok('init','full');
+ const rows=JSON.parse(f.ok('changes','--json').out);assert.equal(rows.find(r=>r.changeId==='test').progress.total,5);assert.equal(rows.find(r=>r.changeId==='full').progress.total,8);
+ const p=path.join(f.base,'skills/t-flow/reference/workflow-protocol.json'),proto=JSON.parse(fs.readFileSync(p));proto.comment+=' update';fs.writeFileSync(p,JSON.stringify(proto));
+ f.ok('--change','test','migrate');const s=f.read('.t-flow/runs/t-flow/test/state.json');assert.equal(s.currentNode,'execute');assert.equal(s.profile,'lite');
+ f.ok('--change','full','migrate');assert.equal(f.read('.t-flow/runs/t-flow/full/state.json').currentNode,'clarify');
+});
+
+test('run summary reports wrapper assertions and elapsed time without pretending to count tests',t=>{
+ const f=fixture(t);f.setup();const r=f.ok('run','T-01','--expect','PASS','--reject','FAIL','--',process.execPath,'-e','console.log("PASS")');
+ const summary=JSON.parse(r.out.split('\n').find(l=>l.startsWith('SUMMARY: ')).slice(9));assert.equal(summary.assertions.passed,2);assert.equal(summary.exitCode,0);assert.ok(summary.durationMs>=0);assert.equal(summary.tests,undefined);
 });

@@ -5,15 +5,10 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 
 # t-flow-execute
 
-### Prerequisites
-所有命令固定使用 `yt.mjs --change <change-id> <命令>`，沿用入口选定的 change；产物只读写 `docs/t-flow/change/<change-id>/`。
-运行 yt.mjs status 确认当前节点为 execute；按 runtime-contract 的最小读取清单读取本阶段所需产物，项目约束同一会话已读且未变不重复读取。
+遵循入口已加载的 runtime-contract；命令固定 --change <id>。断点不明时 context，已知阶段不重复查状态。
 
-### Steps
-读取依赖已满足的任务；用 task 更新 in_progress。最小实现并运行直接相关验证。只运行 plan.md 为当前任务映射的最小验证命令，不得为方便改成全量测试；确需全量必须符合 plan.md 的例外条件并记录原因。验证必须通过 yt.mjs run <任务id> [--input <路径>]... [--expect <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> 真实执行：脚本运行命令、落盘日志并自动生成 evidence，禁止手写 evidence JSON；任务 modules 列出的文件/目录自动计入证据输入（脚本会校验 modules 路径真实存在），其余相关源文件用 --input 补充（支持目录，递归展开）。证据输入必须绑定至少一个实现文件：只绑定本工作流文档的证据会被拒绝，因为无法反映实现变化。建议用 --expect 断言命令输出里的成功标志，仅凭退出码时脚本会告警。参数校验在命令执行前完成；固定证据路径始终记录最新结果，失败即阻断推进。每次执行的独立证据保存在 evidence/attempts/<任务id>/<runId>.json，独立日志不会被重跑覆盖；修好后重跑同 id。然后用 task <id> done docs/t-flow/change/<change-id>/evidence/<任务id>.json 登记（证据 id 与路径须与任务 id 一致）。不能把一次测试泛化为所有功能。验证需要浏览器、数据库等辅助脚本时，脚本本身作为 run 的命令并用 --input 绑定，结果只认 run 生成的 evidence/logs，不把手写 txt/json 输出当作证据。change 目录只保留协议产物、evidence/logs/screenshots 和 ui-scope prototypes；临时探索脚本与输出用完删除或移出，check/archive 会对散文件告警。无强制每任务 commit。任务确需 E2E UI 操作验证时，沿用 verify 阶段的环境选择：先让用户点选本地隔离服务或开发环境；选择开发环境时，只提交并推送当前任务实现代码，不包含测试脚本、工作流产物和凭证，部署后取得访问地址与测试账号再通过 run 验证。同任务相关 AC 共用一次浏览器会话，构建/部署按批次执行，不逐 AC 写新脚本或重复上传。委派时交接需求、权限约束、文件范围、必调 Skill 和证据要求。
+首次执行读取 ../t-flow/reference/verification.md，同会话不重复。用 context [任务id] 获取可执行任务、AC 和证据，不反复展开全量计划。
 
-### Completion reasoning
-逐条检查本阶段产物是否真实满足需求，并运行 yt.mjs check；不满足则留在当前阶段。通过后运行 yt.mjs advance，仅按 NEXT/SKILL 输出继续。
+依赖完成后 task <id> in_progress，最小实现。编码与断言调试在普通 Shell 中完成，稳定后再用 run <任务id> 登记计划中的受影响验证；不要把 run 当调试器。modules 自动绑定，相关测试与配置用 --input 补充。读取 SUMMARY，失败才定位日志。成功后 task <id> done <本任务 evidence 路径>。
 
-### Red flags
-空文件、未经执行的测试、伪造用户确认、沿用过期证据均不能算完成。中断后从 status 和磁盘恢复，不重新初始化覆盖。
+任务聚合所有共享同一次验证的相关 AC；verify 可 reuse 该真实证据，环境未变不重复运行。修改代码后只重跑失败或输入失效的套件。无强制每任务提交，不自动委派或发布。全部完成直接 advance。

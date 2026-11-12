@@ -7,28 +7,11 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 
 ### Prerequisites
 所有命令固定使用 `yt.mjs --change <change-id> <命令>`，沿用入口选定的 change；产物只读写 `docs/t-flow/change/<change-id>/`。
-运行 yt.mjs status 确认当前节点为 ui；按 runtime-contract 的最小读取清单读取本阶段所需产物，项目约束同一会话已读且未变不重复读取。
+沿用入口 context 的阶段与最小读取路径；项目约束已读且未变不重复读取。
 
 ### Steps
 
-**开始前 · 展示选择并等待回答。** 首次进入 UI 且本 change 尚未记录选择时，先向用户询问「本次是否需要 UI 设计？需要时使用哪个 Skill？」。使用可用的问答工具一次展示三个选项：
-
-1. `ui-ux-pro-max`（推荐）：包含设计系统、交互与无障碍指导。
-2. `frontend-design`：侧重视觉与页面实现，仍须补齐五态与权限。
-3. 跳过 UI 设计：不生成本阶段原型，记录用户选择与原因后进入 design。
-
-展示选择后等待用户回答，不能将推荐项视为已选择，不能先生成原型再询问。选 Skill 后才运行 `yt.mjs --change <change-id> ui-use <Skill名>`；跳过则运行 `yt.mjs --change <change-id> skip ui <用户选择及原因>`。若当前任务中用户已明确选择或明确不需要界面，沿用该决定；状态已记录选择且需求未变时直接续跑，不重复询问。回退至 UI 或前序节点会清除旧选择，应重新确认。
-
-**第一步 · 备齐设计 Skill 并记录所用。** 运行 `yt.mjs ensure-skills`：它会把主 Skill `ui-ux-pro-max` 与兜底 `frontend-design` 自动安装到项目 `.agents/skills/`，并在 `.claude/skills/` 建立同名符号链接，使 Claude 与 agent 两条发现路径都能命中。已存在时不重复复制。
-
-然后运行 `yt.mjs ui-routing` 查看当前可用性，并用 `yt.mjs ui-use <Skill名>` 记录本次所用：
-
-| Skill | 何时用 |
-|---|---|
-| `ui-ux-pro-max`（主） | 推荐选择，须经用户选择。覆盖 50+ 风格、161 配色、57 字体配对、10 个技术栈、99 条 UX 准则，含无障碍硬指标（对比度 4.5:1、44×44 触控目标、键盘导航），后台/C 端/移动端都适用 |
-| `frontend-design`（兜底） | 仅当主 Skill 不可用，或用户明确选择它时。它是纯审美指导，**不覆盖五态与角色权限**，须自行补齐 |
-
-`ui-use` 必须显式提供用户选定的 Skill 名；不带参数会被拒绝。以兜底完成会打印 WARN，须在 ui.md 写明原因。
+**选择工具无需停顿。** 沿用用户指定或已记录的 Skill；没有偏好默认 ui-ux-pro-max，不可用时 ensure-skills 补齐，仍不可用才 frontend-design，并记录原因。用 ui-use <Skill名> 记录。用户明确不需要界面或任务无界面时 skip ui <原因>；原型完成后的验收仍保留。不要每次 ensure-skills/ui-routing，只有缺失或诊断需要时调用。
 
 **第二步 · 生成原型。** 加载所选 Skill，复用已确认角色/权限/流程。`ui-ux-pro-max` 自带可检索的本地数据库，按**单一主导意图**查询（需 Python 3，无外部依赖）：
 
@@ -44,15 +27,15 @@ python3 <skill目录>/scripts/search.py "chip badge overflow nowrap" --stack htm
 
 ```ui-scope
 mode: change                                                     # new（新建界面）| change（存量项目改造既有界面）
-files: [src/pages/OrderList.vue]                                 # 本次交付/改动的界面文件或目录，必须真实存在
+files: [src/pages/OrderList.vue]                                 # 本次交付/改动的界面文件或目录，mode: new 可为待创建路径
 affected: [src/pages/OrderDetail.vue, src/styles/theme.css]      # mode: change 时必填：受影响的既有界面与样式
 prototypes: [docs/t-flow/change/<change-id>/prototypes/prototype.html]      # 已展示的真实原型文件，须在本 change 的 prototypes/ 内
 ```
 
-- `files` 与 `affected` 都会被**强制计入证据输入**：改动其中任一文件都会使证据过期，无法出现"确认的是 A、交付的是 B"
+- `files` 与 `affected` 在 verify/archive 由必测套件的输入并集合计覆盖；各任务只绑定相关实现，不让无关页面使后端证据失效。
 - `affected` 不是可有可无的清单：存量改造时它就是**影响面与回归范围**，用户正是在这一步确认"这改动会不会波及其他页面"
 - 生成独立原型时把已展示的 HTML 与评审用截图加入 `prototypes`，HTML 保存到本 change 的 prototypes/，截图保存到 screenshots/，均不放 change 根目录。这些文件参与 UI 确认指纹，修改后必须重新确认；没有独立原型时明确说明评审对象并写空数组。`files` 列实现范围，不能用它替代原型绑定。
-- 路径不存在、`mode` 非法、`change` 却漏填 `affected`，`check` 都会直接阻断
+- mode=new 的 files 可在 UI 阶段尚不存在，执行后必须存在；affected 和 prototypes 始终须存在。mode 非法或 change 缺 affected 会阻断。
 
 另外记录：所用 Skill、空/加载/错误/无权限/正常**五态**的覆盖情况、浏览器实测结论或未测原因。**五态是硬要求，不因所选 Skill 而豁免**。
 五态可由组件测试、原型或真实页面分层覆盖，不逐状态启动浏览器。只有必须真实浏览器操作的 AC 才进入 verify 的 E2E 流程；同一页面的相关 AC 共用一次浏览器会话批量验证。

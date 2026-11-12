@@ -8,8 +8,8 @@
 
 ## 异常场景
 
-- 归档复制失败：保留 change/<id>/，不丢源文档；已有归档目录不能覆盖，先核实是否为上次中断的同一变更。
-- 归档清理中断（已归档但 change/<id>/ 残留）：yt.mjs doctor 会逐项报告（含 active 指针指向已归档变更、changes 下有目录无状态文件等）；核实后手动清理。
+- 归档复制失败：保留现场，重试 --change <id> archive，由 archive-pending.json 和摘要核对后恢复；冲突不得覆盖。
+- 归档清理中断：重试 --change <id> archive，幂等完成清理；不要手动删除源目录。无恢复记录或冲突时再 doctor 并核对现场。
 - state.json 损坏、产物与状态不一致、节点 Skill 或模板缺失、验证循环超限、确认失效：运行 yt.mjs doctor 获取逐项诊断，不依据会话记忆标记完成。
 
 ## 自检

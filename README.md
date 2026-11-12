@@ -1,186 +1,132 @@
 # t-flow
 
-轻量级、可断点续跑的 8 节点研发工作流 Skill：
+可恢复研发工作流，默认按影响范围验证、共享套件、最小上下文读取。
 
+```text
+完整：clarify → specify → ui → design → plan → execute → verify → archive
+轻量：          specify →               plan → execute → verify → archive
 ```
-clarify → specify → ui → design → plan → execute → verify → archive
-需求澄清    PRD/ADR   原型  技术设计  任务拆分  执行    测试报告  验收归档
-```
 
-- 需求澄清由 `grill-me`（grilling）车轮式追问完成；UI 阶段按**场景路由**选择设计 Skill（见下），不再硬编码单一依赖
-- UI 设计 Skill：主 `ui-ux-pro-max`（79 风格 / 50 启用、192 产品配色与推理、74 字体配对、119 条 UX 准则、105 图标、17 GSAP 预设、25 图表类型、22 技术栈，含对比度 4.5:1 / 44×44 触控目标 / 键盘导航等无障碍硬指标），兜底 `frontend-design`（Anthropic 官方，纯审美指导，不覆盖五态与角色权限）。二者随包分发，`yt.mjs ensure-skills` 会把缺失的补到项目 `.agents/skills/`，已存在则不重复复制。`ui-routing` 查看可用性，`ui-use <Skill名>` 记录本次所用；以兜底完成会告警并在 ui.md 留痕
-- **存量项目 UI 变更**：`ui.md` 须含 `ui-scope` 声明块（`mode: new|change`、`files`、`affected`），把「用户确认的界面」与真实文件绑定——`check` 校验路径真实存在与 `change` 必填 `affected`，`run` 把 `files` 与 `affected` 强制计入证据输入，改动已声明的界面文件会使证据过期，杜绝"确认的是 A、交付的是 B"。涉及样式/主题改动时须把样式文件列入声明，否则 `run` 会告警（视觉改动不在证据输入里就不会触发过期检查）
-- 五个用户确认门禁：需求澄清 / PRD 与增量 Spec / UI 原型 / 技术设计 / 交付验收（确认用交互卡片点选完成，点选文字即 `approve` 记录的确认原文，不支持卡片的环境回退文字确认；确认绑定产物指纹，产物一变确认自动失效）；门禁由 `workflow-protocol.json` 各节点的 `approval` 声明，改动即变更 protocolHash 需 migrate
-- 无界面需求可 `skip ui`，小型变更（无架构调整、无数据迁移、无新接口）可 `skip design`，skip 原因均落盘；skip 由 agent 自行判定并记录，不是用户确认的替代品，评审时应复核原因
-- 执行证据由 `yt.mjs run` 真实执行命令生成（限 execute/verify 阶段），禁止手写；任务 `modules` 必须非空且路径真实存在，证据必须绑定至少一个实现文件，绑定源码内容或目录文件清单变化时证据自动过期
-- `run` 支持 `--expect <正则>` 与 `--min-output <字符数>` 断言命令输出，与退出码同时满足才算 passed；不使用断言会告警（脚本无法判断命令语义）。参数校验在命令执行前完成，固定证据路径始终保存同 id 的最新结果，失败立即阻断推进；每次执行的证据保存在 `evidence/attempts/<id>/<runId>.json`，日志独立保留
-- 需求可追溯：`prd.md` 的需求编号（默认 `REQ-NN`）必须在 `verify/test-results.json` 中有对应的已通过必测用例，缺项阻断 verify；不使用编号的项目置 `config.requireCoverage:false`
-- 证据不可复制冒用：校验会核对证据路径中的 id 与文件内容 id 一致，并要求存在对应的 `evidence/attempts/<id>/<runId>.json` 真实执行记录，且固定路径与执行记录一致；verify 用例须在 verify 阶段自行执行（不得引用 execute 任务证据），证据日志须位于 `logs/` 下。只改一个文件无法伪造通过
-- 验证-修复循环最多 3 次（以 reopen 时存在 failed 结果计），超限强制交用户决策，`decide` 记录决策原文后解除
-- 状态在 `.t-flow/runs/t-flow/<change-id>/state.json`，产物在 `docs/t-flow/change/<change-id>/`，中断/新会话可直接续跑；工作流文件更新后用 `migrate` 迁移进行中的状态
-
-## 机制的边界（如实说明）
-
-`yt.mjs` 强制的是结构、存在性、hash 新鲜度与状态流转——即防呆与防过期。具体而言它能保证：产物存在且非空、任务 `modules` 非空且路径真实、证据绑定到实现文件且输入变化即过期、状态流转与确认指纹一致、PRD 需求编号有已通过必测用例、命令输出命中声明的断言、证据路径与内容 id 一致且有对应执行记录（复制文件冒用其他用例会被拒）。
-
-**它不能保证**：断言是否真的等于"测试通过"（`--expect` 匹配的是你自己声明的模式，正则写宽或写错由你负责，脚本只能验证"命中/未命中"）、测试是否真的在检验需求（覆盖校验确认存在已通过必测用例，不确认断言强度）、Spec 合并是否忠实（只比对源/目标文件 hash 与 `reviewed` 标记）。用户确认原文、`reviewed` 标记均由执行 agent 写入，工具无法辨别伪造；审计线索在 state.json 的 `history` 与 `docs/t-flow/change/<change-id>/logs/`（含每条断言的 HIT/MISS）。部署时把它们当作可回溯的账本，而不是防伪证明。
-
-**关于证据防伪的强度**：证据校验要求固定路径、`attempts/<id>/<runId>.json` 与日志三处自洽，因此"复制一个文件改名"已无法冒充（旧版本可以）。但对项目有写权限的执行者仍可同时伪造这三处并保持自洽——它拦住的是顺手篡改与跨用例复用，不是有准备的伪造。真正的防伪需要把证据写到执行者无法改写的边界之外（如 CI 签名产物），本工作流不提供这一层。
+完整模式用于新功能、权限/接口契约、架构或数据迁移。轻量模式用于不改变这些契约的局部修复、文案、样式和小型逻辑调整；保留需求与交付两次确认、任务状态和真实验证证据。范围扩大用 promote 升级，不能借轻量模式跳过已确认验收。
 
 ## 安装
 
-需要 Node.js 18+。
+需要 Node.js 18+；UI 检索需要 Python 3（无第三方依赖，缺 Python 时可人工检索 CSV）。
 
 ```sh
-# 预览（不写文件）
-node install.mjs --project /path/to/your-project
-
-# 安装到项目
-node install.mjs --project /path/to/your-project --apply
-
-# 安装到全局（所有项目可用）
-node install.mjs --global --apply
-
-# 更新已安装的 t-flow（按安装清单区分旧版本与你的本地修改）
-node install.mjs --project /path/to/your-project --update --apply
-
-# 覆盖本地已修改的同名 Skill
-node install.mjs --project /path/to/your-project --update --apply --force
+node install.mjs --project /path/to/project            # 预览
+node install.mjs --project /path/to/project --apply    # 安装
+node install.mjs --global --apply                     # 全局安装
+node install.mjs --project /path/to/project --update --apply
 ```
 
-**更新语义**：安装后目标目录会有 `.t-flow-manifest.json` 清单（版本 + 每个文件的 hash）。`--update` 时：与清单一致的文件视为旧版本安全覆盖；与清单不一致的视为你的本地修改，跳过并列为冲突（`--force` 才覆盖）；新包已删除的文件，未动过则清除、动过则保留并提示。冲突与保留的本地修改不记入清单，后续更新仍会将其识别为本地修改，不会被误覆盖或误清理。协议文件更新会使进行中变更的 state 报版本不一致，运行 `yt.mjs migrate` 迁移续跑（会先校验已完成产物齐全及旧绑定；发生变更则回退到最早受影响节点，撤销该节点及之后的确认；未变更部分保留确认）。
+实体安装到 `.agents/skills/`，并为所有分发 Skill 在 `.claude/skills/` 建符号链接；`--no-link-claude` 可关闭。全局安装使用对应用户目录。目标由参数决定，不自动猜测。
+
+`.t-flow-manifest.json` 保存安装文件 hash。更新覆盖未修改旧文件、移除未修改的废弃文件；本地修改保留并报告冲突，不写入新清单。确认要覆盖本地修改时才使用 `--force`。协议更新后对进行中变更执行 migrate，产物变化会回退到最早受影响节点。
 
 ## 使用
 
-在目标项目中对 agent 说 `/t-flow <需求描述>`，或存在进行中变更时说「继续」。
-
-已有 change 需要小范围修复时，可明确调用 `/t-flow-fix <change-id> <问题描述>`。该命令独立于标准 8 节点工作流，直接修复并运行必要测试，完成后追加 `docs/t-flow/change/<change-id>/fix-log.md` 并同步受影响文档；不推进状态、不生成审批或标准证据。省略 change-id 时仅在 active 明确或只有一个未归档 change 时使用，多个候选必须显式指定。普通“修复”请求不会自动启用此命令。
-
-运行入口（项目根目录）：
+向 agent 说 `/t-flow <需求>`；继续已有任务时指定 change，或在目标明确时说“继续”。下例以源码仓库运行，安装后将脚本路径替换为 `.agents/skills/t-flow/scripts/yt.mjs`。
 
 ```sh
-node .agents/skills/t-flow/scripts/yt.mjs status   # 查看状态/断点
-node .agents/skills/t-flow/scripts/yt.mjs help     # 全部命令
-node .agents/skills/t-flow/scripts/yt.mjs doctor   # 自检
-node .agents/skills/t-flow/scripts/yt.mjs ensure-skills  # 补齐缺失的 UI 设计 Skill（装到项目 .agents/skills）
-```
-
-## Skill 装在哪里：`.agents/skills` 与 `.claude/skills`
-
-两套目录各有用途，**实体只装一份，靠符号链接让两条发现路径都命中**：
-
-| 目录 | 谁从这里发现 | 内容 |
-|---|---|---|
-| `.agents/skills/`（`--global` 时为 `~/.agents/skills/`） | agent / 通用 Skill 规范 | **实体**，`install.mjs` 的唯一写入目标 |
-| `.claude/skills/`（`--global` 时为 `~/.claude/skills/`） | Claude Code | **符号链接** → 指向 `.agents/skills/<name>` |
-
-`install.mjs --apply` 装完实体后，会为**每个** Skill 在 `.claude/skills/` 建符号链接（`--no-link-claude` 可关闭）。此前只有 UI 设计 Skill 会被链接，导致 `t-flow` 入口与 8 个节点 Skill 在 Claude Code 下不可见——现已修复，`doctor` 也会检查本工作流 Skill 的 `.claude` 入口是否缺失。
-
-**装到哪由参数决定，不存在自动判断**：`--project <dir>` → `<dir>/.agents/skills`，`--global` → `~/.agents/skills`。
-
-## Git 管理建议
-
-- `docs/t-flow/`（产物与归档）建议提交，便于评审与追溯。
-- `.t-flow/`（运行状态）单人单机的项目可直接提交；多人或多机使用时建议加入 `.gitignore`，避免 state.json 冲突——冲突需手工合并。
-
-## 目录结构
-
-- `skills/t-flow/` — 入口 Skill（protocol、脚本、模板、参考文档）
-- `skills/t-flow-<node>/` — 8 个节点 Skill
-- `skills/t-flow-status/` — 只读状态查看 Skill
-- `skills/t-flow-fix/` — 独立快速修复 Skill 与 `fix-log.md` 模板，不推进标准工作流
-- `skills/grill-me` `skills/grilling` — 需求澄清依赖
-- `skills/frontend-design` — UI 兜底设计 Skill（Anthropic 官方，Apache-2.0）
-- `skills/ui-ux-pro-max` — UI 主设计 Skill（`data/` 检索库 + `references/` + `scripts/`）
-
-两个 UI 设计 Skill 都随包分发，缺失时由 `yt.mjs ensure-skills` 自动安装，不需手工放置。`ui-ux-pro-max` 的检索脚本需要 Python 3，无外部依赖：
-
-```sh
-python3 scripts/search.py "dashboard analytics" --design-system
-python3 scripts/search.py "error summary validation" --domain ux
-python3 scripts/search.py "chip badge overflow nowrap" --stack html-tailwind
-```
-
-Python 缺失时该 Skill 仍可人工检索 `data/` 下的 CSV。用 `npx skills add nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max` 可获取官方最新版（本包内置的是某一时点的快照）。
-
-## 许可
-
-本仓库中 `grill-me` / `grilling` 来自 [mattpocock/skills](https://github.com/mattpocock/skills)，`frontend-design` 来自 [anthropics/skills](https://github.com/anthropics/skills)（Apache-2.0），`ui-ux-pro-max` 来自 [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)（MIT，见 `skills/ui-ux-pro-max/LICENSE`），均仅作再分发便于一键安装；其余内容为 MIT。
-
-## 校验与升级
-
-`check` 检查产物、任务和测试；确认尚未取得时返回 `ARTIFACTS_READY`，供展示评审。`advance` 和 `archive` 才强制要求有效用户确认。
-
-新版证据为 `schemaVersion:2`。旧版证据需要重新执行验证，不能通过迁移自动获得通过状态。
-
-回归测试：`node --test tests/workflow.test.mjs`，使用临时项目运行真实工作流，不修改业务项目。
-
-## 多 change 独立执行
-
-每个独立任务用一个 change，允许多个任务同时未归档：
-
-```text
-docs/t-flow/
-  change/
-    add-rbac/
-    fix-login/
-  archive/
-    completed-change/
-```
-
-以项目根运行（将 `<runtime>` 替换为已安装的 `t-flow/scripts/yt.mjs`）：
-
-```sh
-node <runtime> init add-rbac
-node <runtime> init fix-login
-node <runtime> changes
-node <runtime> --change add-rbac status
-node <runtime> resume add-rbac
-node <runtime> --change add-rbac check
-node <runtime> --change add-rbac archive
-```
-
-`changes`（也可用 `list`）显示阶段、阶段进度（包含跳过阶段）、任务完成数、更新时间和已归档状态。`resume`/`use` 选择继续目标并输出 NEXT/SKILL，后续照节点执行；不会跳过确认或自动完成任务。归档仍要求验证与验收通过，只移动指定 change，保留其状态以便查询。
-
-多会话并行时，每条命令都用 `--change <id>` 前缀固定目标；active 只是单会话操作的默认选择。各 change 的文档、状态、日志和证据独立，业务源码仍共享，修改同一源码需协调。旧版 `current` 与单份状态使用 `migrate` 迁移，保留历史并重新确认与验证；混有多个任务时先核对归属，不能自动拆分。
-
-进入 UI 阶段会先提示「使用 ui-ux-pro-max（推荐） / 使用 frontend-design / 跳过 UI」。用户选择后才记录 `ui-use <Skill名>` 或 `skip ui <原因>`，不会默认代选；续跑已有选择时直接沿用，原型完成后仍需验收确认。
-
-
-## 验收证据与文档质量
-
-PRD 逐项使用 `AC-NN-N` 描述可观察的验收标准。只把用户可观察、需要独立交付门禁的结果定义为必测 AC；内部边界、普通异常和角色/对象/规则排列组合优先纳入共享自动化测试集，不默认逐组合创建 AC。
-
-验证用例仍用 `REQ-NN-场景` 命名，在 `verify/test-results.json` 中用 `acceptance` 数组逐条关联 AC，并注明 `method`（static/unit/integration/e2e/manual/build）。一个真实测试套件可覆盖多条相关 AC，不为每条 AC 重复启动相同环境或浏览器；报告仍须逐条记录 AC 状态、证据和未测项。所有声明的 AC 都必须被已通过的必测用例覆盖；需求级覆盖不能替代逐条验收。未知 AC、重复用例 ID、未测的必测项阻断 verify/archive。没有 AC 的旧 PRD 保持原 REQ 校验。
-
-默认采用最低有效验证层级：后端纯逻辑以单元测试为主，持久化验证最终数据、约束、事务或审计结果；前端默认使用构建/静态检查、少量共享组件测试与按需选择的人工冒烟。不在浏览器中重复后端已覆盖的角色、对象和规则全组合。plan.md 必须列出改动模块→受影响 AC→最小验证命令映射，execute/verify 默认只执行受影响测试，小改动不触发全量回归。只有共享核心状态机/权限、数据迁移、构建依赖、用户明确要求或影响范围无法可靠确定时才允许全量，并在 plan.md 与测试报告写明原因。已确认 AC 明确声明真实权限、数据或界面行为时仍须有效验证；改变既有验收范围或方式必须重新确认，不能借精简策略把 `not_run` 视为通过。
-
-冒烟测试默认可选，不因未执行冒烟测试单独阻断验收；已确认 AC 的必测要求仍须满足。凡实际执行了冒烟测试，无论成功或失败，都必须在 test-report.md 中记录测试环境、覆盖场景或关联 AC、操作步骤或执行命令、预期与实际结果、状态及证据位置；手工测试按实际观察记录，不编造命令或运行证据。
-
-`run` 增加 `--reject <正则>` 作为失败输出断言，并记录真实 `exitCode`/`signal`。每个 `--expect` 是必须满足的条件，多项条件重复传参；`A|B|C` 只表示任选一项。直接传入 Bash 时自动启用并导出 errexit/pipefail，使嵌套 Bash 也传播失败；其他解释器、显式关闭选项或自定义失败处理仍需自行保证退出码。不要用打印计数或 echo OK 代替断言。
-
-独立原型和评审截图使用 `ui-scope.prototypes` 声明，文件保存到当前 change 内，参与 UI 确认指纹；改动后须重新确认。旧 ui.md 未声明 prototypes 时保持兼容，新版生成原型时须声明。证据报告区分静态检查、mock 单测、原型演示和真实页面/API/数据库测试，未测写 not_run。脚本核对声明、指纹和执行结果，仍不能判断测试是否忠实覆盖业务语义。
-
-change 根目录只保留各阶段协议 Markdown、`fix-log.md` 和可选 `manual-acceptance.md`。JSON 固定放在 `plan/tasks.json`、`verify/test-results.json`、`archive/spec-sync.json`；`evidence/`、`logs/`、`screenshots/` 为受控目录，独立原型 HTML 放 `prototypes/`，评审截图放 `screenshots/`。验证辅助脚本作为 `run` 的命令执行并用 `--input` 绑定，输出由 `run` 写入 `logs/`、`evidence/`；其它临时文件和工具缓存用完删除或移出。`check`/`archive` 对散文件和根目录非 Markdown 文件只读告警，不自动删除，也不阻断历史变更；归档前应完成清理。
-
-确需 E2E UI 操作验证时（用户明确要求或 AC 必须真实浏览器操作），先用卡片选择环境：**本地启动服务**（推荐，隔离注册与数据、直连本地实例）或**发布到开发环境**。选择后者时，只精确提交并推送当前任务实现代码，禁止 `git add -A`，不包含测试脚本、工作流产物、临时文件或凭证；无法分离其他改动时停止。推送后按既有发布链路部署并确认运行 commit，再由用户提供访问地址和测试专用账号密码。凭证只在运行时使用，不进入脚本、命令行、日志、证据或仓库；E2E 通过 `run` 执行并逐 AC 留证。同一页面的相关 AC 共用一个 Playwright 套件和浏览器会话，一次启动/登录后批量断言，不逐 AC 写新脚本、重启浏览器或重复构建上传；成功截图不逐张阅读，失败定位与人工评审时才打开。
-
-基于 RBAC 旧产物的具体审查见 [文档产物审查报告](docs/reviews/2026-10-14-rbac-workflow-artifacts-review.md)。
-
-### 查看所有 change 的状态与恢复中断
-
-```bash
+node skills/t-flow/scripts/yt.mjs init add-rbac
+node skills/t-flow/scripts/yt.mjs init fix-label --lite '局部文案，无权限/接口/数据结构变化'
+node skills/t-flow/scripts/yt.mjs --change fix-label context
+node skills/t-flow/scripts/yt.mjs --change fix-label promote '需求新增权限规则'
 node skills/t-flow/scripts/yt.mjs status --all
-node skills/t-flow/scripts/yt.mjs status --all --json
-node skills/t-flow/scripts/yt.mjs --change <change-id> status
-node skills/t-flow/scripts/yt.mjs --change <change-id> status --json
-node skills/t-flow/scripts/yt.mjs --change <change-id> archive
+node skills/t-flow/scripts/yt.mjs help
 ```
 
-`changes` 和 `list` 同样提供全部 change 的状态列表（包括已归档）。列表包含阶段、总体完成数、任务完成数、当前阶段进度、状态、下一步、阻塞原因和更新时间；查询不改变当前选择。为减少 token，`run`/`task`/`approve`/`advance` 等默认只输出紧凑 `STATE` 和 `NEXT`/`SKILL`，完整确认与 history 保存在 state.json，`--change <id> status --json` 可读取完整状态。各阶段按最小集合读取上游产物，不重复全量展开已确认文档和成功日志；执行长任务应在 plan 阶段按内聚实现单元拆分。文档阶段显示必需非空产物数量，执行阶段显示已完成任务数，验证阶段显示必测项中已声明通过的数量。它们是数量进度，不代表实际工作量；状态会另行校验过期证据和用户确认，满额但校验失败仍显示阻塞。
+多会话每条命令固定 `--change <id>`；active 只是默认选择。change 的状态、产物、日志互相隔离，业务代码共享，修改同一文件仍需协调。`use`/`resume` 改写默认选择；`status`/`context`/`changes` 只读。
 
-同一 change 的修改命令互斥，不同 change 可并行。锁覆盖长时间运行的测试命令，正常结束和报错均释放。强制终止或断电后可能留下 `.t-flow/runs/t-flow/<id>/write.lock`：先核对其中主机/PID 及其子进程已停止，再手工删除该锁并继续；不能因为等待时间长就删除。锁不会隔离共享源码或阻止编辑器直接写文件。
+## 更少等待与文档
 
-归档中断后重复执行指定 change 的 `archive` 即可恢复，复制文件经摘要核对后才保存状态、清理源目录，已完成归档可安全重试。恢复信息保存在 `archive-pending.json`；恢复期间其他修改命令被阻断。若发现源文件变化或目标冲突，保留现场供核对，不自动覆盖。归档不修改共享 active 指针，以免与其他会话切换目标发生竞争；用 `resume <id>` 选择下一项。
+- 轻量模式只需 `prd.md`、`plan.md`、`plan/tasks.json`、`test-report.md`、`verify/test-results.json`、`archive-report.md` 与证据。PRD 合并范围、约束和 AC；不生成澄清纪要、ADR、原型、技术设计、Spec 增量与同步文件。
+- 完整模式范围清晰时，一次准备澄清纪要与 PRD/ADR/spec-delta，向用户展示后 `approve scope <用户原文>` 同时绑定 clarify/specify，再依次 advance；范围仍有疑问先澄清。
+- UI 默认 `ui-ux-pro-max`，沿用用户偏好，不再单独询问工具选择；`ui-use` 记录实际工具，原型仍须确认。不可用时 ensure-skills 补齐，兜底 frontend-design 并说明原因。两者随包分发。
+- 无界面需求可 skip ui；无架构/迁移/新接口的小型变更可 skip design，记录原因。确认只记录真实用户原文，产物变动使确认失效。
+- `context [任务id]` 一次返回当前任务、相关 AC 行号、建议读取路径、有效/失效证据及下一步。成功日志不展开，异常时才 doctor，审计才 status --json。长任务按节点切新会话，直接说“继续”并用 context 恢复，不携带长调试历史。
+- 公共规则集中在 runtime-contract.md；验证规则在 verification.md；仅需 E2E 或异常恢复时加载相应参考文档。同会话未变文件不重复读取。必需产物和运行日志有凭证扫描，命中只显示规则名；已落盘凭证先轮换再脱敏，Git 历史清理不自动执行。
+- advance 自带校验；非确认节点无需无变化地先 check 再 advance。check 用于展示待确认产物或诊断。
 
-新执行证据保存日志 SHA256，并与独立执行记录完整比对。修改日志或仅修改固定证据文件会阻断验收。尚未归档的旧证据若缺少日志摘要，需要重新执行验证命令；已归档历史保持原样。这些检查用于检测不一致，不是防恶意篡改的数字签名。
+## 精简验证与套件复用
+
+默认采用最低有效验证层级：后端纯逻辑以单元测试为主，持久化验证最终数据/约束/事务，前端用构建、组件测试及按需人工冒烟。plan 建立模块 → AC → 最小验证命令映射，只运行受影响测试和直接依赖回归。全量仅限核心状态机/权限、迁移、构建依赖、用户明确要求或影响面无法可靠确定，并说明理由。编码、环境和断言调试在普通 Shell 中完成，稳定后 `run` 登记一次；公共模块改动前置为独立任务，后续任务依赖它，避免证据级联过期。最新通过证据在命令、断言、输入和语义签名一致时返回 `EVIDENCE_VALID`，主动复验用 `--force`。新证据按关联 AC 与上游相关段落计算 `semantic`，无关文字修订不触发级联过期，无法定位时回退全文绑定。集成用例预检环境后集中连续登记，不用 `run` 反复试代码或试环境。
+
+每个 REQ 须有通过的必测用例，PRD 使用完整 AC-NN-N；报告仍须逐条记录 AC 状态、方法、断言、版本和证据。一个套件覆盖多条 AC，多个用例也可引用同一次 execute 或 verify 运行：
+
+```json
+{
+  "id": "REQ-01-login",
+  "required": true,
+  "method": "integration",
+  "acceptance": ["AC-01-1"],
+  "status": "passed",
+  "evidence": "docs/t-flow/change/example/evidence/shared-suite.json",
+  "reuse": {
+    "runId": "原始 runId",
+    "command": "原始完整 command",
+    "environmentUnchanged": true,
+    "reason": "相关输入、覆盖和本地环境未变的具体核对依据"
+  }
+}
+```
+
+复用必须核对环境、覆盖及命令，不能把构建成功等同业务通过。环境/配置/输入变化或无法核实时重跑；报告注明复用而不是声称重新执行。context 的 valid 仅表示证据校验通过，不替代环境与语义核实。
+
+所有 failed 和必测 not_run 阻断，未知 AC、重复用例 id、遗漏 AC 同样阻断；可选未测不能满足覆盖。无 AC 的旧 PRD 保持 REQ 校验，不使用编号的项目可设置 requireCoverage:false（不关闭已声明 AC 校验）。验证修复回退超过三次要求用户方向决定，用 decide 记录。
+
+## 精确证据绑定
+
+```sh
+node skills/t-flow/scripts/yt.mjs --change example run T-01 \
+  --input tests/order.test.js --input package.json \
+  --expect 'passed' --reject 'failed: [1-9]' -- node --test tests/order.test.js
+```
+
+run 只在 execute/verify 可用。execute 自动绑定任务 modules，verify 通过 --input 声明套件涉及的源码、测试文件、依赖清单和配置。目录绑定会检测新增/删除文件，避免用全仓目录代替影响分析。规划时允许尚未创建的 modules；执行时必须存在，且至少绑定一个工作流文档之外的文件。
+
+UI 声明 `ui-scope`（mode、files、affected、prototypes）。new 的实现路径在 UI 阶段可以尚不存在，不必提前造占位文件；affected/prototypes 始终须存在。各任务只绑定相关实现，后端任务不会因无关页面变化失效；verify/archive 检查必测证据的输入并集覆盖整个 files/affected 范围，缺项补测相关套件。原型与评审截图参与确认指纹并绑定证据，修改后须重新确认。
+
+run 的 SUMMARY 包含真实退出码、signal、耗时、包装器断言统计、失败模式与日志路径；包装器断言数不是测试用例数。用例数量来自测试框架的真实报告，不猜测。成功只读摘要，失败定位对应日志片段。相同输入与环境的构建只执行一次。
+
+重复 --expect 为全部满足，A|B 是任选；--reject 命中即失败，--min-output 限定输出长度。直接调用 Bash 自动启用 errexit/pipefail 并传递给嵌套 Bash；其他解释器须自行保证退出码。参数在执行前校验，不能用 echo OK 或只打印数量替代断言。
+
+最新结果固定于 evidence/<id>.json，包括失败；独立执行记录在 evidence/attempts/<id>/<runId>.json，日志不覆盖。校验输入 hash、目录清单、最新 runId、记录一致性及日志 SHA256；旧证据缺少必要字段须重新运行。证据不能复制改名冒用。
+
+## E2E 与人工测试
+
+默认不新增 E2E；只有用户要求或 AC 必须真实浏览器操作时加载 [E2E 指南](skills/t-flow/reference/e2e.md)。同一页面相关 AC 共用套件、启动、登录与浏览器会话；失败或人工评审才查看截图。本地隔离服务优先，发布开发环境需要按指南选择、精确提交并核实部署 commit；凭证不得进入脚本、命令行、日志或仓库。
+
+冒烟默认可选；实际执行则记录环境、步骤、预期/实际结果、状态和证据。人工记录按观察填写；run 校验记录只能证明文件存在，不证明人工行为真实。未测必测项不能通过修改 required 来消除。
+
+## 恢复与归档
+
+状态在 `.t-flow/runs/t-flow/<id>/state.json`，产物在 `docs/t-flow/change/<id>/`。协议变更 migrate，产物变化 reopen 最早受影响阶段；轻量范围升级 promote，保留已有文件但撤销确认，回到完整流程 clarify。
+
+修改命令按 change 加 write.lock，覆盖测试执行。正常结束释放；强制中断留下锁须核实主机/PID和子进程停止后再清理，不能只因等待时间长抢锁。
+
+归档需真实验收与用户确认。完整模式还须核对正式 Spec 同步；轻量不要求 Spec 文件，但契约变化必须升级模式。archive-pending.json 保存恢复记录与摘要，归档中断重试指定 change 的 archive，不手工删除源目录；遇到冲突保留现场。归档不改变 active，不自动提交、发布或合并。
+
+根目录只保留阶段 Markdown；JSON 放 plan/verify/archive，原型放 prototypes/，截图 screenshots/，证据 evidence/，日志 logs/。散文件只告警，不自动删除。测试脚本放项目测试位置，绑定后保留到归档，不能清理仍在使用的证据输入。
+
+已有未归档 change 的独立快速修复仍可显式 `/t-flow-fix <id> <问题>`：不推进状态，直接验证后追加 fix-log.md 和受影响文档；恢复标准流程时重新检查指纹与证据。新建且要完整恢复/验收记录的小任务优先轻量模式。
+
+## 边界与校验
+
+运行器保证结构、状态流转、指纹和声明一致，不能判断测试语义是否忠实、外部环境是否改变或确认原文是否真实。写权限持有者仍可同时改写记录与日志；这是可追溯账本，不是数字签名防伪。Spec 同步也只校验 hash 与 reviewed 声明。
+
+```sh
+node --test tests/workflow.test.mjs
+node scripts/benchmark.mjs
+```
+
+测试使用临时项目。基准覆盖轻量修复、完整新功能和失败续跑，记录耗时、命令次数、运行次数与输出字符数；字符数是上下文大小的代理指标，不冒充真实 token 账单。不将基准全量执行加入普通业务任务默认验证。
+
+建议提交 docs/t-flow；单机可提交 .t-flow，多人多机通常忽略状态目录以免冲突。原有状态无 profile 字段按完整模式兼容。
+
+## 目录与许可
+
+skills/t-flow 是入口/运行器/协议/模板/参考文档，t-flow-<阶段> 为阶段规则，t-flow-status 为只读查询，t-flow-fix 为独立修复。
+
+分发依赖：grill-me/grilling 来自 [mattpocock/skills](https://github.com/mattpocock/skills)，frontend-design 来自 [anthropics/skills](https://github.com/anthropics/skills)（Apache-2.0），ui-ux-pro-max 来自 [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)（MIT，见包内 LICENSE）。其余内容为 MIT。

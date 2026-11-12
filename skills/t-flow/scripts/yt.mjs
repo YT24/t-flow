@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 const root=path.resolve(process.env.TFLOW_RUN_ROOT || process.cwd());
 const pkg=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const protocol=JSON.parse(fs.readFileSync(path.join(pkg,'reference/workflow-protocol.json')));
-const nodes=protocol.nodes.filter(n=>!n.disabled);
+const fullNodes=protocol.nodes.filter(n=>!n.disabled);
+let nodes=fullNodes, profile="full";
 const cfg=protocol.config||{};
 const SPEC_PREFIX=cfg.specTargetPrefix??'docs/t-flow/openspec/specs/';
 const SPEC_REQUIRED=cfg.specSyncRequired!==false;
@@ -47,7 +48,14 @@ if(_argv[0]==='--change'){CLI_CHANGE=_argv[1];_argv.splice(0,2);}
 const [cmd='help',arg,value,...extra]=_argv;
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 // 确认门禁与验证-修复上限均由协议声明（改动这些值会改变 protocolHash，进行中变更需 migrate）。
-const APPROVAL_NODES=nodes.filter(n=>n.approval).map(n=>n.id), MAX_VERIFY_FAILURES=cfg.maxVerifyFailures??3;
+let APPROVAL_NODES=nodes.filter(n=>n.approval).map(n=>n.id);
+const MAX_VERIFY_FAILURES=cfg.maxVerifyFailures??3;
+function configureProfile(s={}){
+ profile=s.profile||'full';
+ if(!['full','lite'].includes(profile))throw Error('未知工作流模式 '+profile);
+ nodes=profile==='lite'?fullNodes.filter(n=>['specify','plan','execute','verify','archive'].includes(n.id)):fullNodes;
+ APPROVAL_NODES=nodes.filter(n=>n.approval).map(n=>n.id);
+}
 function safe(rel){
  if(!rel || path.isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) throw Error('路径必须在项目内');
  const full=path.resolve(root,rel); let cursor=root;
@@ -94,6 +102,7 @@ function readState(cid){
  const s=JSON.parse(fs.readFileSync(f,'utf8'));
  if(s.changeId!==cid)throw Error('状态 changeId 与目录不一致: '+cid);
  if(s.workflow!==protocol.name||s.protocolHash!==protocolHash())throw Error('变更 '+cid+' 的状态与工作流版本不一致：运行 --change '+cid+' migrate');
+ configureProfile(s);
  return s;
 }
 function writeStateFile(s){const f=stateFileOf(s.changeId);fs.mkdirSync(path.dirname(f),{recursive:true});const tmp=f+'.'+process.pid+'.'+Date.now()+'.tmp';fs.writeFileSync(tmp,JSON.stringify(s,null,2)+'\n',{flag:'wx'});fs.renameSync(tmp,f);}
@@ -138,7 +147,7 @@ function migrateLegacy(){
 function state(){const cid=activeId();if(!cid)throw Error('未聚焦任何变更：use <change-id> 或 init <change-id>');return readState(cid);}
 function save(s,action){if(action)s.history.push({action,at:new Date().toISOString()});s.updatedAt=new Date().toISOString();writeStateFile(s);}
 function node(id){const n=nodes.find(n=>n.id===id);if(!n)throw Error('未知节点 '+id);return n;}
-function files(n){return n.outputSchemas.flatMap(id=>{const schema=protocol.outputSchemas.find(x=>x.id===id);if(!schema)throw Error('缺少 schema '+id);return schema.artifacts.filter(a=>a.required).flatMap(a=>a.paths);});}
+function files(n){if(profile==='lite'&&['specify','archive'].includes(n.id))return ['docs/t-flow/current/'+(n.id==='specify'?'prd.md':'archive-report.md')];return n.outputSchemas.flatMap(id=>{const schema=protocol.outputSchemas.find(x=>x.id===id);if(!schema)throw Error('缺少 schema '+id);return schema.artifacts.filter(a=>a.required).flatMap(a=>a.paths);});}
 function contentHash(p){return p.endsWith('/tasks.json')?sha(JSON.stringify(json(p).map(({status,evidence,...rest})=>rest))):sha(fs.readFileSync(safe(p)));}
 function fingerprint(s,id){
  const end=nodes.findIndex(n=>n.id===id),paths=nodes.slice(0,end+1).flatMap(files).map(p=>mapArt(s.changeId,p));
@@ -181,6 +190,11 @@ function validateEvidence(e,s,{path:evPath}={}){
   if(JSON.stringify(expandInput(p).map(([rel])=>rel).sort())!==JSON.stringify(entries))throw Error('验证证据目录已变化: '+p);
  }
  for(const [p,h]of Object.entries(e.inputs)){if(sha(fs.readFileSync(safe(p)))!==h)throw Error('验证证据过期: '+p);}
+ if(e.semantic){
+  const current=semanticUpstream(s,e.id,e.node,e.semantic.acceptance);
+  const changed=current?Object.keys(e.semantic.hashes).filter(p=>current.hashes[p]!==e.semantic.hashes[p]):[];
+  if(!current||changed.length||Object.keys(current.hashes).length!==Object.keys(e.semantic.hashes).length)throw Error('验证证据关联的需求、设计或计划已变化: '+e.id+(changed.length?'（'+changed.join(', ')+'）':''));
+ }
  if(!e.log||!e.log.split(path.sep).join('/').startsWith(logsDir()+'/'))throw Error('证据日志必须位于 '+logsDir()+'/ 下');
  if(!isDeepStrictEqual(stored,e))throw Error('执行记录与证据不匹配: '+ap);
  if(!read(e.log).trim())throw Error('缺少验证日志');
@@ -188,16 +202,17 @@ function validateEvidence(e,s,{path:evPath}={}){
  if(sha(fs.readFileSync(safe(e.log)))!==e.logHash)throw Error('验证日志已变化: '+e.log);
 }
 function testResult(s){const r=json(docDir()+'/'+TEST_RESULTS_PATH);if(r.changeId!==s.changeId||!Array.isArray(r.tests)||!r.tests.length)throw Error('缺少本次测试结果');if(new Set(r.tests.map(t=>t.id)).size!==r.tests.length)throw Error('用例 ID 重复');for(const t of r.tests){if(typeof t.required!=='boolean'||!['passed','failed','not_run'].includes(t.status))throw Error('测试结果非法');if(t.status==='failed')throw Error('测试失败 '+t.id);if(t.required&&t.status!=='passed')throw Error('必测项未通过 '+t.id);if(t.status==='passed'){
-  // verify 用例必须由 verify 阶段自己执行：不得复用 execute 阶段的任务证据，
-  // 否则"测试"可能从未作为测试运行过（历史缺陷）。
-  // 判据是「被引用证据所属 id 的执行阶段」，且只看该 runId 那次执行，避免同一 id
-  // 在两个阶段都被合法使用时误伤。
-  const m=new RegExp('^'+CHANGES_BASE.replace(/\//g,'\\/')+'\\/([^/]+)\\/evidence\\/([^/]+)\\.json$').exec(String(t.evidence).split(path.sep).join('/'));
-  if(m&&m[2]!==String(t.id))throw Error('用例 '+t.id+' 引用了 '+m[2]+' 的证据：请用 run '+t.id+' 执行该用例本身');
-  const cur=m?json(evDir()+'/'+m[2]+'.json'):null;
-  const rec=(m&&cur)?attemptsOf(m[2]).find(r=>r.runId===cur.runId):null;
-  if(rec&&rec.node&&rec.node!=='verify')throw Error('用例 '+t.id+' 复用了 '+rec.node+' 阶段的证据（'+m[2]+'）：请在 verify 阶段用 run '+t.id+' 执行该用例本身');
-  validateEvidence(json(t.evidence),s,{path:t.evidence});
+  // 跨阶段复用必须显式绑定原始执行，不复制或改写证据。
+  const source=json(t.evidence);
+  validateEvidence(source,s,{path:t.evidence});
+  if(t.reuse){
+   const reuse=t.reuse;
+   if(!['execute','verify'].includes(source.node)||reuse.runId!==source.runId||reuse.command!==source.command||reuse.environmentUnchanged!==true||typeof reuse.reason!=='string'||!reuse.reason.trim())throw Error('复用证据须匹配 execute/verify runId、command，并声明 environmentUnchanged 和 reason');
+  }else{
+   if(source.id!==String(t.id))throw Error('用例 '+t.id+' 引用了 '+source.id+' 的证据：请执行该用例或显式声明 reuse');
+   if(source.node!=='verify')throw Error('用例 '+t.id+' 须在 verify 执行或显式声明 reuse');
+  }
+
  }}if(!r.tests.some(t=>t.required))throw Error('没有定义必测项');coverage(r);return r;}
 // 需求覆盖：每个需求至少有一个通过的必测用例。
 function coverage(r){
@@ -224,14 +239,64 @@ function coverage(r){
  if(missing.length)throw Error('以下验收标准缺少已通过的必测用例: '+missing.join(', ')+'（在用例 acceptance 中逐条列出；未测不能计为通过）');
 }
 
-function syncResult(s){const p=docDir()+'/'+SPEC_SYNC_PATH;if(!fs.existsSync(safe(p))){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}const r=json(p);if(r.changeId!==s.changeId||!Array.isArray(r.files))throw Error('Spec 同步证据非法');if(!r.files.length){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}for(const f of r.files){if(!f.source.startsWith(docDir()+'/')||!f.target.startsWith(SPEC_PREFIX))throw Error('Spec 路径不正确（目标须以 '+SPEC_PREFIX+' 开头）');if(sha(read(f.source))!==f.sourceHash||sha(read(f.target))!==f.targetHash)throw Error('Spec 同步证据过期');}if(r.reviewed!==true)throw Error('Spec 合并未核对');}
+// UI 验收覆盖由必测套件的输入并集承担，后端任务不再绑定无关页面。
+function validateUiCoverage(s,result){
+ if(s.skipped?.ui||!fs.existsSync(safe(docDir()+'/ui.md')))return;
+ const sc=uiScope({implementation:true});
+ const covered=new Set();
+ for(const t of result.tests.filter(t=>t.required&&t.status==='passed')){
+  for(const p of Object.keys(json(t.evidence).inputs))covered.add(p);
+ }
+ const missing=[...new Set([...sc.files,...sc.affected])].flatMap(p=>{
+  const entries=expandInput(p);
+  return entries.length?entries.map(([file])=>file).filter(file=>!covered.has(file)):[p];
+ });
+ if(missing.length)throw Error('UI 范围缺少必测证据输入覆盖: '+missing.join(', ')+'；仅对相关套件补充 --input 后执行');
+}
+
+// 只读恢复包：给出选择与定位，不展开历史和成功日志。
+function context(s){
+ if(!s.currentNode)return {changeId:s.changeId,profile:s.profile||'full',next:'done',archivePath:s.archivePath};
+ const blockers=[];
+ try{drift(s);}catch(e){blockers.push(e.message);}
+ const tp=docDir()+'/'+TASKS_PATH;
+ const ts=fs.existsSync(safe(tp))?tasks():[];
+ const candidates=ts.filter(t=>t.status!=='done'&&t.dependsOn.every(id=>ts.find(x=>x.id===id)?.status==='done'));
+ const selected=arg?ts.find(t=>t.id===arg):candidates.find(t=>t.status==='in_progress')||candidates[0];
+ if(arg&&!selected)throw Error('未知任务 '+arg);
+ const evidence=[];
+ if(fs.existsSync(safe(evDir())))for(const name of fs.readdirSync(safe(evDir())).filter(p=>p.endsWith('.json')).sort()){
+  const ep=evDir()+'/'+name;
+  try{
+   const e=json(ep);let reason='';
+   try{validateEvidence(e,s,{path:ep});}catch(err){reason=err.message;}
+   evidence.push({id:e.id,path:ep,node:e.node,runId:e.runId,status:reason?'invalid':'valid',...(reason?{reason}:{command:e.command,environment:'复用前核实环境与覆盖未变'})});
+  }catch(e){evidence.push({path:ep,status:'invalid',reason:e.message});}
+ }
+ const prd=docDir()+'/prd.md',acs=selected?.acceptance||[];
+ const acceptance=fs.existsSync(safe(prd))?read(prd).split('\n').flatMap((line,i)=>acs.some(ac=>new RegExp('(^|[^A-Za-z0-9-])'+String(ac).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'($|[^A-Za-z0-9-])').test(line))?[{line:i+1,text:line}]:[]):[];
+ const upstream={clarify:[],specify:['clarify-log.md'],ui:['prd.md'],design:['prd.md','ui.md'],plan:['prd.md','design.md'],execute:['plan.md','design.md'],verify:['prd.md',TEST_RESULTS_PATH],archive:['test-report.md','spec-delta.md',SPEC_SYNC_PATH]};
+ const readFiles=(upstream[s.currentNode]||[]).map(p=>docDir()+'/'+p).filter(p=>fs.existsSync(safe(p)));
+ if(selected)readFiles.push(...selected.modules);
+ const staleTask=ts.find(t=>t.status==='done'&&evidence.some(e=>e.path===t.evidence&&e.status==='invalid'));
+ let next=selected?'task '+selected.id+' in_progress':'check';
+ if(staleTask)next=s.currentNode==='execute'?'run '+staleTask.id+'（沿用计划中的验证命令）':'reopen execute';
+ else if(s.currentNode!=='execute')next='check';
+ if(blockers.length)next='修复 blocker 指示的阶段后再次 context';
+ return {changeId:s.changeId,profile:s.profile||'full',stage:s.currentNode,blockers,
+  task:selected||null,acceptance,readFiles:[...new Set(readFiles)],evidence,
+  requiredArtifacts:files(node(s.currentNode)).map(p=>mapArt(s.changeId,p)),next,
+  note:'valid 仅表示证据未过期；复用还须核实环境、命令与 AC 覆盖。成功日志不必展开。'};
+}
+
+function syncResult(s){if(s.profile==='lite')return;const p=docDir()+'/'+SPEC_SYNC_PATH;if(!fs.existsSync(safe(p))){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}const r=json(p);if(r.changeId!==s.changeId||!Array.isArray(r.files))throw Error('Spec 同步证据非法');if(!r.files.length){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}for(const f of r.files){if(!f.source.startsWith(docDir()+'/')||!f.target.startsWith(SPEC_PREFIX))throw Error('Spec 路径不正确（目标须以 '+SPEC_PREFIX+' 开头）');if(sha(read(f.source))!==f.sourceHash||sha(read(f.target))!==f.targetHash)throw Error('Spec 同步证据过期');}if(r.reviewed!==true)throw Error('Spec 合并未核对');}
 function validate(s,id,{approval=true}={}){
- const n=node(id);for(const p of files(n).map(pp=>mapArt(s.changeId,pp))){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;if(!read(p).trim())throw Error('产物为空 '+p);}
- if(id==='ui'){uiScope();if(!s.uiSkill?.used)throw Error('请先询问用户是否跳过 UI，或选择设计 Skill，再用 ui-use <Skill名> 记录');}
+ const n=node(id);for(const p of files(n).map(pp=>mapArt(s.changeId,pp))){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;const content=read(p);if(!content.trim())throw Error('产物为空 '+p);assertNoSecrets(p,content);}
+ if(id==='ui'){uiScope();if(!s.uiSkill?.used)throw Error('请用 ui-use <Skill名> 记录默认或用户指定的设计 Skill');}
  if(id==='plan')tasks();
  if(id==='execute'){for(const t of tasks()){if(t.status!=='done'||!t.evidence)throw Error('任务未完成 '+t.id);validateEvidence(json(t.evidence),s,{path:t.evidence});}}
- if(id==='verify'){validate(s,'execute',{approval:false});testResult(s);}
- if(id==='archive'){validate(s,'execute',{approval:false});testResult(s);syncResult(s);}
+ if(id==='verify'){validate(s,'execute',{approval:false});const r=testResult(s);validateUiCoverage(s,r);}
+ if(id==='archive'){validate(s,'execute',{approval:false});const r=testResult(s);validateUiCoverage(s,r);syncResult(s);}
  if(approval&&APPROVAL_NODES.includes(id)&&s.approvals[id]?.fingerprint!==fingerprint(s,id))throw Error('需要用户确认或确认已失效: '+id);
 }
 function drift(s){for(const id of s.completedNodes){if(s.completedHashes[id]!==fingerprint(s,id))throw Error('已完成产物变化，请 reopen '+id);}}
@@ -264,7 +329,7 @@ function parseUiScope(text){
  return out;
 }
 // 校验 ui.md 的 ui-scope 声明：模式合法、路径真实存在、改造时必须列受影响界面。
-function uiScope(){
+function uiScope({implementation=false}={}){
  const p=docDir()+'/ui.md';
  if(!fs.existsSync(safe(p)))return null;
  const sc=parseUiScope(read(p));
@@ -274,7 +339,9 @@ function uiScope(){
  if(!['new','change'].includes(sc.mode))throw Error('ui-scope 的 mode 必须是 new 或 change（当前 '+(sc.mode||'<空>')+'）');
  if(!sc.files.length)throw Error('ui-scope 的 files 不能为空：至少列出本次交付/改动的界面文件或目录');
  for(const p of sc.prototypes){if(!p.startsWith(docDir()+'/')||!fs.existsSync(safe(p))||!fs.statSync(safe(p)).isFile())throw Error('原型须为本 change 内真实文件: '+p);}
- const bad=sc.files.concat(sc.affected,sc.prototypes).filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
+ for(const p of sc.files)safe(p);
+ const required=(implementation||sc.mode==='change'?sc.files:[]).concat(sc.affected,sc.prototypes);
+ const bad=required.filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
  if(bad.length)throw Error('ui-scope 声明的路径不存在或非法: '+bad.join(', ')+'（须为项目内真实相对路径）');
  if(sc.mode==='change'&&!sc.affected.length)throw Error('ui-scope 的 mode=change（存量改造）时必须用 affected 列出受影响的既有界面，供用户评估影响面与回归范围');
  return sc;
@@ -351,12 +418,12 @@ function archiveChange(s){
  fs.unlinkSync(safe(jp));print(journal.finalState);
 }
 function changeSummary(cid){
- const previous=CLI_CHANGE;CLI_CHANGE=cid;
+ const previous=CLI_CHANGE,previousProfile=profile;CLI_CHANGE=cid;
  try{
   const s=readState(cid),base=s.currentNode?changeDocDir(cid):s.archivePath;
   const taskPath=base+'/'+TASKS_PATH,legacyTasks=base+'/tasks.json';
   const tsPath=fs.existsSync(safe(taskPath))?taskPath:legacyTasks,ts=fs.existsSync(safe(tsPath))?json(tsPath):[];
-  const row={changeId:cid,stage:s.currentNode||'archived',status:s.currentNode?'in_progress':'archived',
+  const row={changeId:cid,profile:s.profile||'full',stage:s.currentNode||'archived',status:s.currentNode?'in_progress':'archived',
    progress:{done:new Set([...s.completedNodes,...Object.keys(s.skipped||{})]).size,total:nodes.length},
    tasks:{done:ts.filter(t=>t.status==='done').length,total:ts.length,blocked:ts.filter(t=>t.status==='blocked').length},
    stageProgress:{kind:'artifacts',done:0,total:0},reason:'',next:s.currentNode?'继续 '+s.currentNode:'已完成',updatedAt:s.updatedAt};
@@ -381,7 +448,7 @@ function changeSummary(cid){
   }
   return row;
  }catch(e){return {changeId:cid,status:'invalid',stage:'?',reason:e.message,next:'doctor',stageProgress:{done:0,total:0},progress:{done:0,total:nodes.length},tasks:{done:0,total:0}};}
- finally{CLI_CHANGE=previous;}
+ finally{CLI_CHANGE=previous;configureProfile({profile:previousProfile});}
 }
 function listChanges(){
  const rows=changeIds().sort().map(changeSummary);
@@ -394,7 +461,7 @@ function listChanges(){
 function print(s){
  if(cmd==='status'&&_argv.includes('--json')){console.log(JSON.stringify(s,null,2));return;}
  // 默认只输出恢复所需摘要；完整确认、指纹和 history 落盘保存，需要审计时用 status --json。
- console.log('STATE: '+JSON.stringify({changeId:s.changeId,currentNode:s.currentNode,completedNodes:s.completedNodes,skipped:Object.keys(s.skipped||{}),verifyFailures:s.verifyFailures,...(s.archivePath?{archivePath:s.archivePath}:{}),updatedAt:s.updatedAt}));
+ console.log('STATE: '+JSON.stringify({changeId:s.changeId,profile:s.profile||'full',currentNode:s.currentNode,completedNodes:s.completedNodes,skipped:Object.keys(s.skipped||{}),verifyFailures:s.verifyFailures,...(s.archivePath?{archivePath:s.archivePath}:{}),updatedAt:s.updatedAt}));
  if(cmd==='status')console.log('SUMMARY: '+JSON.stringify(changeSummary(s.changeId)));
  if(!s.currentNode){console.log('NEXT: done');return;}
  console.log('NEXT: '+s.currentNode+(APPROVAL_NODES.includes(s.currentNode)?'（用户确认门禁，approve 记录确认原文后才能 advance）':''));
@@ -402,14 +469,21 @@ function print(s){
  if(s.currentNode==='ui'){
   if(s.uiSkill?.used)console.log('UI_SELECTED: '+s.uiSkill.used+'（已选择，继续设计；原型仍需用户确认）');
   else{
-   console.log('UI_CHOICE: 请先询问用户：跳过 UI 设计，还是选择设计 Skill？等待明确选择后继续。');
+   console.log('UI_CHOICE: 默认使用主 Skill；沿用用户明确选择，无需额外询问工具偏好。原型仍须验收。');
    console.log('1. 跳过 UI（无界面需求或用户已明确要求跳过）：--change '+s.changeId+' skip ui <用户选择及原因>');
    console.log('2. '+(UI_ROUTING?.primary||'ui-ux-pro-max')+'（推荐）：--change '+s.changeId+' ui-use '+(UI_ROUTING?.primary||'ui-ux-pro-max'));
    console.log('3. '+(UI_ROUTING?.fallback||'frontend-design')+'：--change '+s.changeId+' ui-use '+(UI_ROUTING?.fallback||'frontend-design'));
   }
  }
 }
-const PRUNE_DIRS=new Set(['.git','node_modules']);
+const PRUNE_DIRS=new Set(['.git','node_modules','target','build','dist','out','coverage','.next','.nuxt','__pycache__','.playwright-cli']);
+const SECRET_RULES=[
+ ['private-key',/-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/],
+ ['credential-assignment',/(?:password|passwd|secret|access[_-]?token|api[_-]?key|密码|密钥|令牌)\s*[:=]\s*(?!["']?(?:<|\$\{|\*{3,}|x{3,}|example|sample|dummy|redacted|示例))["']?[^\s,"'}\]]{6,}/i],
+ ['bearer-token',/\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+\/-]{8,}/i]
+];
+function secretFindings(text){return SECRET_RULES.filter(([,pattern])=>pattern.test(String(text))).map(([name])=>name);}
+function assertNoSecrets(rel,text){const hits=secretFindings(text);if(hits.length)throw Error('疑似凭证不得落盘: '+rel+'（'+hits.join(', ')+'）；请脱敏并使用环境变量，不回显匹配内容');}
 function expandInput(p){
  const f=safe(p);
  if(!fs.statSync(f).isDirectory())return [[p,sha(fs.readFileSync(f))]];
@@ -417,11 +491,53 @@ function expandInput(p){
  (function walkDir(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){if(PRUNE_DIRS.has(e.name))continue;const q=path.join(d,e.name);if(e.isDirectory())walkDir(q);else if(e.isFile())out.push(q);}})(f);
  return out.map(q=>[path.relative(root,q).split(path.sep).join('/'),sha(fs.readFileSync(q))]);
 }
-function boundInputs(s,extra,{strict=true}={}){
- const m={},idx=nodes.findIndex(n=>n.id===s.currentNode);
- for(const p of [...new Set(nodes.slice(0,idx).flatMap(files).map(pp=>mapArt(s.changeId,pp)))]){if(p.endsWith('/tasks.json'))continue;if(fs.existsSync(safe(p)))m[p]=sha(read(p));}
+function upstreamArtifactPaths(s,nodeId=s.currentNode){
+ const idx=nodes.findIndex(n=>n.id===nodeId);
+ return [...new Set(nodes.slice(0,idx).flatMap(files).map(pp=>mapArt(s.changeId,pp)))].filter(p=>!p.endsWith('/tasks.json'));
+}
+function boundInputs(s,extra,{strict=true,upstream=true}={}){
+ const m={};
+ if(upstream)for(const p of upstreamArtifactPaths(s)){if(fs.existsSync(safe(p)))m[p]=sha(read(p));}
  for(const p of extra){if(!fs.existsSync(safe(p))){if(strict)throw Error('输入文件不存在 '+p);continue;}for(const [rel,h]of expandInput(p))m[rel]=h;}
  return m;
+}
+function relatedAcceptance(s,id,nodeId=s.currentNode){
+ const prdPath=docDir()+'/prd.md';if(!fs.existsSync(safe(prdPath)))return [];
+ const all=read(prdPath).match(/\bAC-\d+-\d+\b/g)||[];if(!all.length)return [];
+ if(nodeId==='execute'){
+  const t=json(docDir()+'/'+TASKS_PATH).find(x=>x.id===id);
+  return [...new Set((t?.acceptance||[]).filter(x=>/^AC-\d+-\d+$/.test(x)))];
+ }
+ if(nodeId==='verify'){
+  const rp=docDir()+'/'+TEST_RESULTS_PATH;
+  if(fs.existsSync(safe(rp))){try{const t=json(rp).tests.find(x=>String(x.id)===id),ac=[...new Set((t?.acceptance||[]).filter(x=>/^AC-\d+-\d+$/.test(x)))];if(ac.length)return ac;}catch{}}
+  const reqs=[...new Set(id.match(/REQ-\d+/g)||[])];
+  return [...new Set(all.filter(ac=>reqs.includes('REQ-'+ac.split('-')[1])))];
+ }
+ return [];
+}
+function relatedExcerpt(text,id,acceptance){
+ const lines=text.split('\n'),needles=[...acceptance,id].map(x=>new RegExp('(^|[^A-Za-z0-9-])'+String(x).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'($|[^A-Za-z0-9-])'));
+ const keep=new Set();
+ for(let i=0;i<lines.length;i++){
+  if(!needles.some(re=>re.test(lines[i])))continue;
+  if(lines[i].trim().startsWith('|')){keep.add(i);continue;}
+  let start=i;while(start>0&&!/^#{1,6}\s/.test(lines[start]))start--;
+  if(start===0&&!/^#{1,6}\s/.test(lines[0]))return null;
+  let end=i+1;while(end<lines.length&&!/^#{1,6}\s/.test(lines[end]))end++;
+  for(let j=start;j<end;j++)keep.add(j);
+ }
+ return keep.size?[...keep].sort((a,b)=>a-b).map(i=>lines[i]).join('\n'):null;
+}
+function semanticUpstream(s,id,nodeId=s.currentNode,acceptance){
+ const ac=acceptance||relatedAcceptance(s,id,nodeId);if(!ac.length)return null;
+ const hashes={};
+ for(const p of upstreamArtifactPaths(s,nodeId)){
+  if(!fs.existsSync(safe(p)))continue;
+  const content=read(p),excerpt=relatedExcerpt(content,id,ac);
+  hashes[p]=sha(excerpt??content);
+ }
+ return {acceptance:ac,hashes};
 }
 function shellQuote(a){return /^[\w@%+=:,./-]+$/.test(a)?a:"'"+a.replace(/'/g,"'\\''")+"'";}
 function readStdin(){try{if(!fs.fstatSync(0).isCharacterDevice())return fs.readFileSync(0,'utf8');}catch{}return null;}
@@ -525,6 +641,7 @@ function doctor(){
   const tag='['+cid+'] ';
   let s=null;try{s=JSON.parse(fs.readFileSync(stateFileOf(cid),'utf8'));}catch(e){problems.push(tag+'状态损坏: '+e.message+'；人工修复或删除 '+stateFileOf(cid));}
   if(!s)continue;
+  try{configureProfile(s);}catch(e){problems.push(tag+e.message);continue;}
   if(fs.existsSync(safe(archiveJournal(cid))))problems.push(tag+'归档待恢复：--change '+cid+' archive');
   if(fs.existsSync(path.dirname(stateFileOf(cid))+'/write.lock'))problems.push(tag+'存在写入锁：等待命令结束，异常退出后核对主机/PID及子进程再清理遗留锁');
   const hashOk=s.workflow===protocol.name&&s.protocolHash===protocolHash();
@@ -564,23 +681,23 @@ function doctor(){
 }
 try{
  if(CLI_CHANGE!==null)validId(CLI_CHANGE);
- if(['init','approve','decide','skip','advance','task','run','ui-use','reopen','migrate','archive'].includes(cmd)){
+ if(['init','approve','decide','skip','advance','task','run','ui-use','reopen','migrate','archive','promote'].includes(cmd)){
   const cid=cmd==='init'?arg:cmd==='migrate'&&fs.existsSync(LEGACY_STATE)?JSON.parse(fs.readFileSync(LEGACY_STATE)).changeId:activeId();
   if(cid){lockChange(cid);if(cmd!=='archive'&&fs.existsSync(safe(archiveJournal(cid))))throw Error('归档尚未完成，请先 --change '+cid+' archive 恢复');}
  }
  if(['init','use','resume'].includes(cmd)&&CLI_CHANGE&&CLI_CHANGE!==arg)throw Error('--change 与目标 change 不一致');
  if(fs.existsSync(LEGACY_STATE)&&!['help','migrate','doctor','changes','list'].includes(cmd))throw Error('检测到旧布局，请先运行 migrate 迁移 current');
- if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> | use <change-id> | resume <change-id> | changes [--json] | status [--all] [--json] | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
+ if(cmd==='help'){console.log(`yt.mjs [--change <id>] init <change-id> [--lite <理由>] | context [<任务id>] | promote <原因> | use <change-id> | resume <change-id> | changes [--json] | status [--all] [--json] | approve <node> [用户确认原文] | decide [用户决策原文] | skip <node> <原因> | check | advance | task <id> <status> [evidence] | run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] [--force] -- <命令> | ensure-skills | ui-routing | ui-use <Skill名> | handoff | doctor | reopen <node> | migrate | archive
 状态输出：run/task/approve/advance 等默认只打印紧凑 STATE 摘要；status --json 输出单个 change 的完整状态，status --all --json 输出全部 change 摘要。
 确认节点: ${APPROVAL_NODES.join('/')}（产物变化后确认自动失效；确认/决策原文可经 stdin 传入）。可跳过节点（协议声明）: ${nodes.filter(n=>n.skippable).map(n=>n.id).join('/')||'无'}；skip 记录原因并直接进入下一节点，reopen 前序节点会清除其后的跳过记录。
 证据必须由 run 真实执行生成（限 execute/verify 阶段），禁止手写；execute 阶段证据 id 须为 tasks.json 中的任务 id，任务 modules 必须非空且路径真实存在、自动计入证据输入，--input 支持文件或目录（目录递归展开，跳过 .git/node_modules）。证据至少要绑定一个实现文件，只绑定本工作流文档会被拒绝。
-证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段自行执行，不得引用 execute 任务证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
+证据不可复制冒用：校验会核对「证据路径中的 id 与文件内容 id 一致」，并要求存在对应的 attempts/<id>/<runId>.json 真实执行记录；verify 用例须在 verify 阶段执行或通过 reuse 显式引用有效 execute 测试证据；证据日志必须位于 logs/ 下。只改一处文件无法伪造通过。
 断言：--expect <正则> 要求输出命中（可重复多次，各项都必须命中）；--reject <正则> 任一命中即失败。直接调用 Bash 时自动启用 errexit/pipefail 并让嵌套 Bash 继承，不能让管道或 echo 成功标记吞掉失败；其他解释器需自行保证退出码。--min-output 要求输出不少于 N 字符；与退出码同时满足才算 passed。不用断言时脚本会告警——run 本身不校验命令语义，请自行确保命令真实覆盖被测内容。参数校验在命令执行前完成；固定证据路径记录最新结果，失败阻断推进；每次执行的证据与日志独立保留。
 验收覆盖：PRD 声明 AC-NN-N 时，test-results.json 用例须用 acceptance 逐条覆盖全部 AC，并记录 method 验证方式；未测/可选用例不计覆盖。重复用例 ID 和未知 AC 会被拒绝。
 需求覆盖：prd.md 里的需求编号（模式 ${REQ_PATTERN}）必须被 test-results.json 中已通过必测用例的 id 覆盖，缺项阻断 verify；不使用编号的项目置 config.requireCoverage:false。
 从 verify 回退且存在 failed 测试才计验证-修复次数，超过 ${MAX_VERIFY_FAILURES} 次停止并要求用户决策，decide 记录用户决策原文后解除。协议文件变更后对每个未归档变更运行 --change <id> migrate。多 change：各变更独立目录 docs/t-flow/change/<id>/ 与状态，互不干扰、可并行推进；并行会话每条命令固定使用 --change <id> 前缀；init 新建、resume/use 选择继续目标、changes/list 查看进度和状态。
 UI 设计 Skill：主 ${UI_ROUTING?UI_ROUTING.primary:'ui-ux-pro-max'}，兜底 ${UI_ROUTING?UI_ROUTING.fallback:'frontend-design'}（ui-routing 查看；ui-use <Skill名> 记录实际所用）。缺失时运行 ensure-skills 自动安装到项目 .agents/skills/ 并链接 .claude/skills/（Claude 与 agent 两条发现路径都可用）。
-ui.md 须含 ${UI_SCOPE_BLOCK} 声明块（mode: new|change；files/affected 为真实界面路径），check 校验其存在，run 把 files 与 affected 强制计入证据输入——改动已声明的界面文件会使证据过期，避免"确认的界面≠交付的界面"。存量改造（mode: change）必须列 affected。UI 变更未绑定任何样式文件时 run 会告警。
+ui.md 须含 ${UI_SCOPE_BLOCK} 声明块。新建界面的实现路径在 verify 检查；各套件通过 modules/--input 绑定相关文件，verify/archive 检查必测证据合计覆盖 files/affected。存量改造（mode: change）必须列 affected。UI 变更未绑定任何样式文件时 run 会告警。
 Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spec 的项目置 specSyncRequired:false）。项目根: TFLOW_RUN_ROOT 或 cwd。归档前必须人工验收；不会自动提交或发布代码。`);}
  else if(cmd==='ensure-skills'){
   const results=ensureUiSkills({auto:true});
@@ -622,12 +739,15 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
  else if(cmd==='doctor'){doctor();}
  else if(cmd==='init'){
   validId(arg);
+  if(value&&value!=='--lite')throw Error('init 仅支持 --lite <适用理由>');
+  if(value==='--lite'&&!extra.join(' ').trim())throw Error('轻量模式须记录适用理由：无新功能/权限规则/接口契约/数据迁移');
+  configureProfile({profile:value==='--lite'?'lite':'full'});
   if(fs.existsSync(stateFileOf(arg)))throw Error('变更 '+arg+' 已存在（use '+arg+' 聚焦，或换一个 id）');
   const docdir=changeDocDir(arg);
   if(fs.existsSync(safe(DOC_BASE+'/archive/'+arg)))throw Error('归档目录已存在，请使用新的 change-id');
   if(fs.existsSync(safe(DOC_BASE+'/current')))throw Error('旧 current 尚未迁移，先核对其任务归属');
   if(fs.existsSync(safe(docdir)))throw Error(docdir+' 已存在，先检查已有文档，不自动覆盖');
-  const s={schemaVersion:1,workflow:protocol.name,protocolHash:protocolHash(),changeId:arg,currentNode:nodes[0].id,completedNodes:[],completedHashes:{},approvals:{},skipped:{},verifyFailures:0,history:[]};
+  const s={schemaVersion:1,profile,profileReason:value==='--lite'?extra.join(' '):undefined,workflow:protocol.name,protocolHash:protocolHash(),changeId:arg,currentNode:nodes[0].id,completedNodes:[],completedHashes:{},approvals:{},skipped:{},verifyFailures:0,history:[]};
   fs.mkdirSync(safe(docdir),{recursive:true});setActive(arg);save(s,'init');print(s);
   console.log('CHANGES: 本项目可有多个并行变更；changes 查看，use <id> 切换。');
  }else if(cmd==='use'||cmd==='resume'){
@@ -643,6 +763,7 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
   // migrate 的职责就是修复版本不一致，因此这里只读原始状态、不做 protocolHash 校验。
   const s=JSON.parse(fs.readFileSync(sf,'utf8'));
   if(s.changeId!==cid)throw Error('状态 changeId 与目录不一致: '+cid);
+  configureProfile(s);
   if(s.workflow!==protocol.name)throw Error('state.workflow ('+s.workflow+') 与协议 ('+protocol.name+') 不一致，无法自动迁移');
   if(s.protocolHash===protocolHash())throw Error('协议未变化，无需迁移');
   const docBase=s.currentNode?changeDocDir(s.changeId):s.archivePath;
@@ -670,12 +791,20 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
   const s=state();
   if(cmd==='archive')archiveChange(s);
   else if(cmd==='status')print(s);
+  else if(cmd==='context')console.log(JSON.stringify(context(s),null,2));
   else if(fs.existsSync(safe(archiveJournal(s.changeId))))throw Error('归档尚未完成，请先 archive 恢复');
   else if(cmd==='handoff'){
    if(!s.currentNode)throw Error('变更已归档');
    console.log('# handoff '+s.changeId+' @ '+s.currentNode);
    const idx=nodes.findIndex(n=>n.id===s.currentNode);
    for(const p of [...new Set(nodes.slice(0,idx+1).flatMap(files).map(pp=>mapArt(s.changeId,pp)))])console.log('- '+p+' '+(fs.existsSync(safe(p))?contentHash(p):'MISSING'));
+  }
+  else if(cmd==='promote'){
+   if(s.profile!=='lite'||!s.currentNode)throw Error('仅未归档轻量变更可升级');
+   if(!arg?.trim())throw Error('promote 需要范围升级原因');
+   s.profile='full';configureProfile(s);s.currentNode=nodes[0].id;
+   s.completedNodes=[];s.completedHashes={};s.approvals={};s.skipped={};
+   save(s,'promote '+arg);print(s);
   }
   else if(cmd==='reopen'){
    const i=nodes.findIndex(n=>n.id===arg);if(i<0||!s.currentNode)throw Error('无法重新打开');
@@ -690,8 +819,15 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
    drift(s);if(!s.currentNode)throw Error('变更已归档');
    if(cmd==='approve'){
     const quote=value??readStdin();
+    if(arg==='scope'){
+     if(s.currentNode!=='clarify'||profile!=='full'||!quote?.trim())throw Error('合并确认仅用于完整模式 clarify，须展示澄清与 PRD/Spec 后记录原文');
+     for(const id of ['clarify','specify'])validate(s,id,{approval:false});
+     for(const id of ['clarify','specify'])s.approvals[id]={quote:quote.trim(),fingerprint:fingerprint(s,id),at:new Date().toISOString()};
+     save(s,'approve scope');print(s);
+    }else{
     if(arg!==s.currentNode||!APPROVAL_NODES.includes(arg)||!quote?.trim())throw Error('只可为当前确认节点记录用户确认原文（可经 stdin 传入）');
     validate(s,arg,{approval:false});s.approvals[arg]={quote:quote.trim(),fingerprint:fingerprint(s,arg),at:new Date().toISOString()};save(s,'approve '+arg);print(s);
+    }
    }else if(cmd==='decide'){
     const quote=arg??readStdin();
     if(!quote?.trim())throw Error('decide 需要用户决策原文（可经 stdin 传入）');
@@ -708,11 +844,12 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(!['execute','verify'].includes(s.currentNode))throw Error('只有 execute/verify 阶段可生成证据');
     if(!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,79}$/.test(arg||''))throw Error('evidence-id 使用字母数字和连字符');
     const rest=_argv.slice(2),sep=rest.indexOf('--');
-    if(sep<0||sep===rest.length-1)throw Error('用法: run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] -- <命令>');
+    if(sep<0||sep===rest.length-1)throw Error('用法: run <id> [--input <路径>]... [--expect <正则>]... [--reject <正则>]... [--min-output <字符数>] [--timeout <秒>] [--force] -- <命令>');
     const flags=rest.slice(0,sep),cmdArgs=rest.slice(sep+1),extraInputs=[];
-    let timeoutMs=30*60*1000,expects=[],rejects=[],minOutput=0;
+    let timeoutMs=30*60*1000,expects=[],rejects=[],minOutput=0,force=false;
     for(let i=0;i<flags.length;i++){
-     if(flags[i]==='--input'&&flags[i+1])extraInputs.push(flags[++i]);
+     if(flags[i]==='--force')force=true;
+     else if(flags[i]==='--input'&&flags[i+1])extraInputs.push(flags[++i]);
      else if(flags[i]==='--expect'&&flags[i+1])expects.push(flags[++i]);
      else if(flags[i]==='--reject'&&flags[i+1])rejects.push(flags[++i]);
      else if(flags[i]==='--min-output'&&flags[i+1]){const n=Number(flags[++i]);if(!Number.isSafeInteger(n)||n<0)throw Error('--min-output 需为非负数');minOutput=n;}
@@ -726,8 +863,9 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
     if(bash)cmdArgs.splice(1,0,'-e','-o','pipefail');
     const runEnv=bash?{...process.env,SHELLOPTS:[...new Set([...(process.env.SHELLOPTS||'').split(':').filter(Boolean),'errexit','pipefail'])].join(':')}:process.env;
     const command=cmdArgs.map(shellQuote).join(' ');
+    const commandSecrets=secretFindings(command);if(commandSecrets.length)throw Error('命令包含疑似凭证（'+commandSecrets.join(', ')+'），已拒绝执行；请改用环境变量，不回显匹配内容');
     // 先算证据输入并校验，再执行命令：否则命令已产生副作用（写库、发请求、改文件）才因参数非法报错。
-    const inputs=boundInputs(s,extraInputs),inputRoots=[...extraInputs];
+    const semantic=semanticUpstream(s,arg),inputs=boundInputs(s,extraInputs,{upstream:!semantic}),inputRoots=[...extraInputs];
     if(s.currentNode==='execute'){
      const ts=json(docDir()+'/'+TASKS_PATH),t=Array.isArray(ts)?ts.find(x=>x.id===arg):null;
      // execute 阶段证据 id 必须是已声明的任务：否则会生成无法登记、只污染证据目录的孤儿证据。
@@ -735,18 +873,12 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
      {
       const bad=(t.modules||[]).filter(m=>{try{return !fs.existsSync(safe(m));}catch{return true;}});
       if(bad.length)throw Error('任务 '+arg+' 的 modules 路径不存在或非法: '+bad.join(', ')+'（modules 须为项目内真实相对路径，证据输入绑定依赖它）');
-      Object.assign(inputs,boundInputs(s,t.modules));inputRoots.push(...t.modules);
+      Object.assign(inputs,boundInputs(s,t.modules,{upstream:false}));inputRoots.push(...t.modules);
      }
     }
-    // ui-scope 声明的界面文件强制计入证据输入：用户确认的界面一旦变化，证据必须过期。
-    // files（本次交付）与 affected（受影响的既有界面）都要绑定——否则"用户在 ui 门禁里
-    // 确认过的影响面"可以被绕过：改了一个已声明的受影响页面却检测不到。
-    const sc=currentUiScope(s);
-    if(sc&&(sc.files.length||sc.affected.length||sc.prototypes.length)){
-     const declared=[...new Set([...sc.files,...sc.affected,...sc.prototypes])];
-     const bad=declared.filter(f=>{try{return !fs.existsSync(safe(f));}catch{return true;}});
-     if(bad.length)throw Error('ui-scope 声明的界面文件不存在: '+bad.join(', ')+'（ui.md 与磁盘不一致，请修正或 reopen ui）');
-     for(const f of declared){for(const [rel,h]of expandInput(f))inputs[rel]=h;inputRoots.push(f);}
+    // 原型作为已确认的契约仍绑定；实现页面按套件影响范围绑定。
+    for(const p of currentUiScope(s)?.prototypes||[]){
+     for(const [rel,h]of expandInput(p))inputs[rel]=h;
     }
     // 证据输入必须至少覆盖一个非文档（源码/配置）文件，否则该证据无法反映实现变化。
     const docPrefix=DOC_BASE+'/';
@@ -757,27 +889,46 @@ Spec 合并目标前缀: ${SPEC_PREFIX}（protocol config 可改；无正式 Spe
      const styleBound=Object.keys(inputs).filter(p=>matchStyleGlob(p));
      if(!styleBound.length)console.error('WARN: 本次为 UI 变更（ui.md 存在），但证据未绑定任何样式/主题文件。若本次涉及样式或 design token，请把样式目录或主题文件加入任务 modules 或 --input——否则视觉改动不会使证据过期。');
     }
+    // run 是最终登记通道，不应承载反复编码/环境调试；输入变化引起的复验仍可继续。
+    const previousAttempts=attemptsOf(arg);
+    if(previousAttempts.length>=2)console.error('WARN: '+arg+' 已有 '+previousAttempts.length+' 次执行记录。若仍在调试，请改用普通 Shell，稳定后 run 登记一次；若因输入变化复验则继续。');
     const directories=Object.fromEntries([...new Set(inputRoots)].filter(p=>fs.statSync(safe(p)).isDirectory()).map(p=>[p,expandInput(p).map(([rel])=>rel).sort()]));
+    const existingPath=evDir()+'/'+arg+'.json';
+    if(!force&&fs.existsSync(safe(existingPath))){
+     try{
+      const existing=json(existingPath);
+      if(existing.status==='passed'&&existing.node===s.currentNode){
+       validateEvidence(existing,s,{path:existingPath});
+       if(existing.command!==command||!isDeepStrictEqual(existing.inputs,inputs)||!isDeepStrictEqual(existing.directories||{},directories)||!isDeepStrictEqual(existing.expects||[],expects)||!isDeepStrictEqual(existing.rejects||[],rejects)||(existing.minOutput||0)!==minOutput)throw Error('验证命令、断言或输入范围已变化');
+       console.log('EVIDENCE_VALID: '+existingPath);console.log('STATUS: passed');
+       process.exit(0);
+      }
+     }catch{/* 无效或范围变化则继续真实执行 */}
+    }
+    const started=Date.now();
     const r=spawnSync(cmdArgs[0],cmdArgs.slice(1),{cwd:root,env:runEnv,encoding:'utf8',timeout:timeoutMs,maxBuffer:64*1024*1024});
-    const out=(r.stdout||'')+'\n'+(r.stderr||'');
+    const durationMs=Date.now()-started;
+    const out=(r.stdout||'')+'\n'+(r.stderr||''),outputSecrets=secretFindings(out);
     // 断言：退出码 0 且全部 --expect 模式命中、输出量达标，才算 passed。
     const unmet=expects.filter((pat,i)=>!patterns[i].test(out));
     const rejected=rejects.filter((pat,i)=>rejectPatterns[i].test(out));
     const bodyLen=out.trim().length;
-    const ok=r.status===0&&!unmet.length&&!rejected.length&&bodyLen>=minOutput;
+    const ok=r.status===0&&!unmet.length&&!rejected.length&&!outputSecrets.length&&bodyLen>=minOutput;
     const runId=crypto.randomUUID(),log=logsDir()+'/'+arg+'-'+runId+'.log';
-    writeRaw(log,['$ '+command,'',r.stdout||'',r.stderr||'',r.error?'[error] '+r.error.message:'','[exit] '+(r.status===null?'signal '+(r.signal||'?'):r.status),
+    const safeOutput=outputSecrets.length?'[疑似敏感输出未落盘；命中规则: '+outputSecrets.join(', ')+']':out;
+    writeRaw(log,['$ '+command,'',safeOutput,r.error?'[error] '+r.error.message:'','[exit] '+(r.status===null?'signal '+(r.signal||'?'):r.status),
      expects.length?'[expect] '+expects.map(p=>p+' -> '+(unmet.includes(p)?'MISS':'HIT')).join('; '):'',
      rejects.length?'[reject] '+rejects.map(p=>p+' -> '+(rejected.includes(p)?'HIT (failed)':'CLEAR')).join('; '):'',
      minOutput?'[min-output] '+minOutput+' (actual '+bodyLen+')':''].filter(Boolean).join('\n'));
-    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,exitCode:r.status,signal:r.signal||null,...(bash?{shellOptions:['errexit','pipefail']}:{}),recordedAt:new Date().toISOString(),inputs,log,logHash:sha(fs.readFileSync(safe(log))),
-     ...(expects.length?{expects}:{}),...(rejects.length?{rejects}:{}),...(minOutput?{minOutput}:{})};
+    const ev={schemaVersion:2,id:arg,runId,node:s.currentNode,directories,changeId:s.changeId,status:ok?'passed':'failed',command,durationMs,exitCode:r.status,signal:r.signal||null,...(bash?{shellOptions:['errexit','pipefail']}:{}),recordedAt:new Date().toISOString(),inputs,log,logHash:sha(fs.readFileSync(safe(log))),
+     ...(expects.length?{expects}:{}),...(rejects.length?{rejects}:{}),...(minOutput?{minOutput}:{}),...(outputSecrets.length?{secretRules:outputSecrets}:{}),...(semantic?{semantic}:{})};
     const ep=evDir()+'/'+arg+'.json';
     // 每次执行保存独立记录；固定路径始终指向最新结果，包括失败。
     write(evDir()+'/attempts/'+arg+'/'+runId+'.json',ev);
     write(ep,ev);
     save(s,'run '+arg+'='+ev.status);
-    console.log('EVIDENCE: '+ep);console.log('STATUS: '+ev.status);if(!ok)process.exitCode=1;
+    if(outputSecrets.length)console.error('SECRET_OUTPUT_BLOCKED: 敏感输出未写入日志，仅记录规则名；请脱敏后重试');
+    console.log('EVIDENCE: '+ep);console.log('STATUS: '+ev.status);console.log('LOG: '+log);console.log('EXIT: '+r.status);console.log('SUMMARY: '+JSON.stringify({runId,status:ev.status,exitCode:r.status,signal:ev.signal,durationMs,assertions:{passed:expects.length-unmet.length+rejects.length-rejected.length,failed:unmet.length+rejected.length},failedPatterns:[...unmet,...rejected],log}));if(!ok)process.exitCode=1;
    }else if(cmd==='task'){
     if(s.currentNode!=='execute')throw Error('只有执行阶段可更新任务');
     const ts=tasks(),t=ts.find(x=>x.id===arg);if(!t||!['pending','in_progress','blocked','done'].includes(value))throw Error('任务或状态非法');
