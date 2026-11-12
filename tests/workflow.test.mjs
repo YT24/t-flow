@@ -227,15 +227,15 @@ test('doctor reports a missing bundled skill as a distribution fault',t=>{
 
 // —— 存量项目 UI 变更 ——
 test('ui.md requires a ui-scope block and rejects malformed declarations',t=>{
- const f=fixture(t);f.atUi();
+ const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');
  f.doc('ui.md','no scope block here');
  assert.match(f.run('check').out,/缺少 ```ui-scope 声明块/);
  f.doc('ui.md','```ui-scope\nmode: bogus\nfiles: [src/App.vue]\n```');
  assert.match(f.run('check').out,/mode 必须是 new 或 change/);
  f.doc('ui.md','```ui-scope\nmode: new\nfiles: []\n```');
  assert.match(f.run('check').out,/files 不能为空/);
- f.doc('ui.md','```ui-scope\nmode: new\nfiles: [src/Ghost.vue]\n```');
- assert.match(f.run('check').out,/路径不存在或非法/);
+ f.doc('ui.md','```ui-scope\nmode: new\nfiles: [../outside.vue]\n```');
+ assert.match(f.run('check').out,/路径必须在项目内/);
 });
 test('change mode must declare affected existing interfaces',t=>{
  const f=fixture(t);f.atUi();f.ok('ui-use','ui-ux-pro-max');f.uiMd({mode:'change',files:['src/App.vue'],affected:[]});

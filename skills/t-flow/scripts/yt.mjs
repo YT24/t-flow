@@ -291,7 +291,9 @@ function context(s){
 
 function syncResult(s){if(s.profile==='lite')return;const p=docDir()+'/'+SPEC_SYNC_PATH;if(!fs.existsSync(safe(p))){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}const r=json(p);if(r.changeId!==s.changeId||!Array.isArray(r.files))throw Error('Spec 同步证据非法');if(!r.files.length){if(SPEC_REQUIRED)throw Error('缺少 Spec 同步证据');return;}for(const f of r.files){if(!f.source.startsWith(docDir()+'/')||!f.target.startsWith(SPEC_PREFIX))throw Error('Spec 路径不正确（目标须以 '+SPEC_PREFIX+' 开头）');if(sha(read(f.source))!==f.sourceHash||sha(read(f.target))!==f.targetHash)throw Error('Spec 同步证据过期');}if(r.reviewed!==true)throw Error('Spec 合并未核对');}
 function validate(s,id,{approval=true}={}){
- const n=node(id);for(const p of files(n).map(pp=>mapArt(s.changeId,pp))){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;const content=read(p);if(!content.trim())throw Error('产物为空 '+p);assertNoSecrets(p,content);}
+ const n=node(id);for(const p of files(n).map(pp=>mapArt(s.changeId,pp))){if(p.endsWith('/spec-sync.json')&&!SPEC_REQUIRED&&!fs.existsSync(safe(p)))continue;if(!read(p).trim())throw Error('产物为空 '+p);}
+ const idx=nodes.findIndex(n=>n.id===id);
+ for(const p of [...new Set(nodes.slice(0,idx+1).flatMap(files).map(pp=>mapArt(s.changeId,pp)))])if(fs.existsSync(safe(p)))assertNoSecrets(p,read(p));
  if(id==='ui'){uiScope();if(!s.uiSkill?.used)throw Error('请用 ui-use <Skill名> 记录默认或用户指定的设计 Skill');}
  if(id==='plan')tasks();
  if(id==='execute'){for(const t of tasks()){if(t.status!=='done'||!t.evidence)throw Error('任务未完成 '+t.id);validateEvidence(json(t.evidence),s,{path:t.evidence});}}
