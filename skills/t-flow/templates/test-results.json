@@ -1,14 +1,14 @@
 {
-  "_说明": "每个 REQ 须有通过的必测用例；PRD 声明 AC-NN-N 时，acceptance 必须逐条覆盖全部 AC。一个真实用例可覆盖多条相关 AC，不为每条 AC 重复执行相同套件。声明 acceptance 的用例须记录 method（static/unit/integration/e2e/manual/build）。可选或未测用例不满足覆盖，缺项阻断 verify/archive。复用 execute 或 verify 套件时 evidence 指向原始任务证据，并增加 reuse 对象（runId、command、environmentUnchanged:true、reason）；环境或输入变化时重新执行。",
-  "changeId": "example-change",
+  "_说明": "一个真实用例可覆盖多条相关 AC；每个 REQ 与全部 AC 须有通过的必测用例，可选或未测用例不满足覆盖。只记录实际结果，不需要日志或证据引用。",
+  "changeId": "<change-id>",
   "tests": [
     {
       "id": "REQ-01",
       "required": true,
-      "method": "integration",
-      "acceptance": ["AC-01-1"],
       "status": "not_run",
-      "evidence": "docs/t-flow/change/<change-id>/evidence/REQ-01.json"
+      "acceptance": [
+        "AC-01-1"
+      ]
     }
   ]
 }

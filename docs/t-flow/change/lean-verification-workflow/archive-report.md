@@ -29,10 +29,9 @@
 - 无新增业务运行时风险、数据库迁移或回滚事项。
 - 无后续必做任务。
 
-## 交付证据
+## 交付结果
 
 - 实现：`skills/t-flow-specify/SKILL.md`、`skills/t-flow-design/SKILL.md`、`skills/t-flow-verify/SKILL.md`。
 - 模板与说明：`skills/t-flow/templates/`、`skills/t-flow/reference/runtime-contract.md`、`README.md`。
 - 回归：`tests/workflow.test.mjs`。
-- 验证证据：`evidence/REQ-01-REQ-02-REQ-03-REQ-04-lean-guidance.json`、`evidence/REQ-05-regression.json` 及 `logs/` 中对应日志。
 - 无原型、截图或迁移记录。用户归档确认须由 `approve archive` 写入状态，本报告不代表已经归档。

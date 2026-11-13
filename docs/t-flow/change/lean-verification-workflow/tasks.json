@@ -13,8 +13,7 @@
       "AC-02-1",
       "AC-03-1"
     ],
-    "status": "done",
-    "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/T-01.json"
+    "status": "done"
   },
   {
     "id": "T-02",
@@ -35,8 +34,7 @@
       "AC-03-1",
       "AC-04-1"
     ],
-    "status": "done",
-    "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/T-02.json"
+    "status": "done"
   },
   {
     "id": "T-03",
@@ -55,7 +53,6 @@
       "AC-04-1",
       "AC-05-1"
     ],
-    "status": "done",
-    "evidence": "docs/t-flow/change/lean-verification-workflow/evidence/T-03.json"
+    "status": "done"
   }
 ]

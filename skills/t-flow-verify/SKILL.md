@@ -5,12 +5,10 @@ description: 仅由 t-flow 入口路由到本阶段时使用。
 
 # t-flow-verify
 
-遵循入口已加载的 runtime-contract；命令固定 --change <id>。断点不明时 context，已知阶段不重复查状态。
+遵循入口已加载的 runtime-contract；命令固定 --change <id>。断点不明时 context。
 
-首次读取 ../t-flow/reference/verification.md；默认只运行 plan 映射的受影响测试，不默认全量测试。确需全量按公共规则并在报告中写明原因。
+首次读取 reference/verification.md。按已确认 AC 真实验证，仅运行受影响套件；同一真实测试可覆盖多条相关 AC，环境和输入未变不重复执行。
 
-先 context 检查有效证据，核实环境与覆盖后 reuse execute 或 verify 套件；一个真实用例可覆盖多条相关 AC，也可多个场景引用同一次执行。不在浏览器中重复后端已覆盖的组合。集成环境先用普通 Shell 预检，稳定后集中登记相关 REQ；失败修复在普通 Shell 调试，不用 run 反复试环境。
+写 test-report.md 和 verify/test-results.json，只保留逐条 AC 的实际结果与结论；失败和未测项简短说明原因。JSON 保留 id、required、status、acceptance，不要求方法、命令、断言、版本、evidence、runId 或 reuse。不生成或引用日志与证据文件，手工结果按实际观察填写，必测未执行写 not_run。
 
-写 test-report.md 与 verify/test-results.json：逐 AC 状态、方法、真实断言、对象/版本、证据和复用依据。必测未执行写 not_run，不得降为可选。手工结果按实际观察记录，不能伪造命令。报告按套件汇总，不抄成功日志。
-
-不主动新增 E2E；只有用户要求或 AC 必须真实浏览器操作时加载 ../t-flow/reference/e2e.md。失败回退 execute 并只重跑受影响套件；通过直接 advance。
+每个必测通过用例须匹配最新有效 run 结果（同 id 或覆盖其全部 AC），不能只靠报告写 passed；代码、测试或配置变化必须重测。全部必测 AC 通过后 advance；失败修复只重跑失败和受影响套件，不得编造通过结果。
